@@ -844,7 +844,17 @@ def create_app(config_path=None):
             # The full sync will process all current items; future incremental runs diff against these snapshots.
             success = queue.take_initial_snapshots(config, logger)
             if not success:
-                logger.warning("Could not take initial snapshots — continuing with full sync anyway")
+                # API calls failed — save empty snapshots as fallback so the banner
+                # doesn't reappear. Empty snapshots mean "process everything" on the
+                # next incremental run, but the database already skips synced items.
+                logger.warning("Could not take initial snapshots via API — saving empty snapshots as fallback")
+                db = get_db()
+                try:
+                    for key in ["watchlist", "watched", "watchlist_all"]:
+                        if not db.snapshots_exist([key]):
+                            db.save_list_snapshot(key, [])
+                finally:
+                    db.close()
             queue.enqueue_migrate_trakt_watchlist(incremental=False, suppress_notifications=False)
             queue.enqueue_watchlist_sync_all(incremental=False, suppress_notifications=False)
             queue.enqueue_watched_sync_all(incremental=False, suppress_notifications=False)
@@ -870,7 +880,17 @@ def create_app(config_path=None):
             logger.info("Initial sync skipped — taking snapshots for incremental-only auto-sync")
             success = queue.take_initial_snapshots(config, logger)
             if not success:
-                return jsonify({"error": "Failed to take snapshots. Check logs for details."}), 500
+                # API calls failed — save empty snapshots as fallback so the banner
+                # doesn't reappear. Empty snapshots mean "process everything" on the
+                # next incremental run, but the database already skips synced items.
+                logger.warning("Could not take initial snapshots via API — saving empty snapshots as fallback")
+                db = get_db()
+                try:
+                    for key in ["watchlist", "watched", "watchlist_all"]:
+                        if not db.snapshots_exist([key]):
+                            db.save_list_snapshot(key, [])
+                finally:
+                    db.close()
             _scheduler_state["initial_sync_answered"] = True
             _scheduler_state["initial_sync_pending"] = False
             logger.info("Initial snapshots saved. Auto-sync will process only new items going forward.")

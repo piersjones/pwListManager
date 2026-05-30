@@ -172,20 +172,25 @@ class Database:
 
     def save_list_snapshot(self, list_key: str, trakt_ids: list):
         """Save a snapshot of trakt_ids for a given list key.
-        Replaces any previous snapshot for the same list_key."""
+        Replaces any previous snapshot for the same list_key.
+        Inserts a sentinel row (trakt_id=0) for empty snapshots so snapshots_exist works."""
         conn = self._get_conn()
         conn.execute("DELETE FROM list_snapshots WHERE list_key = ?", (list_key,))
+        rows = [(list_key, tid) for tid in trakt_ids if tid > 0]
+        if not rows:
+            rows = [(list_key, 0)]  # Sentinel row so snapshots_exist returns True
         conn.executemany(
             "INSERT INTO list_snapshots (list_key, trakt_id) VALUES (?, ?)",
-            [(list_key, tid) for tid in trakt_ids]
+            rows
         )
         conn.commit()
 
     def get_list_snapshot(self, list_key: str) -> set:
-        """Get the set of trakt_ids from the last snapshot for a given list_key."""
+        """Get the set of trakt_ids from the last snapshot for a given list_key.
+        Excludes sentinel rows (trakt_id=0)."""
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT trakt_id FROM list_snapshots WHERE list_key = ?",
+            "SELECT trakt_id FROM list_snapshots WHERE list_key = ? AND trakt_id > 0",
             (list_key,)
         ).fetchall()
         return {row[0] for row in rows}
