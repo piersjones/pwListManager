@@ -16,6 +16,14 @@ DB_PATH = os.path.join(DATA_DIR, "sync_state.db")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 
 
+def _ensure_config_path_writable():
+    """Remove a directory at CONFIG_PATH if one exists (can happen with Docker bind mounts).
+    When Docker mounts a non-existent file, it creates a directory instead."""
+    if os.path.isdir(CONFIG_PATH):
+        import shutil
+        shutil.rmtree(CONFIG_PATH)
+
+
 def _check_trakt_auth():
     cookie_dir = os.path.join(BASE_DIR, ".cookie")
     token_file = os.path.join(cookie_dir, "trakt_token.json")
@@ -226,6 +234,7 @@ def create_app(config_path=None):
             }
 
             import yaml
+            _ensure_config_path_writable()
             with open(CONFIG_PATH, "w") as f:
                 yaml.dump(config_data, f, default_flow_style=False)
 
@@ -942,6 +951,7 @@ def create_app(config_path=None):
                         "log_level": config.log_level,
                     }
                 }
+                _ensure_config_path_writable()
                 with open(CONFIG_PATH, "w") as f:
                     yaml.dump(config_data, f, default_flow_style=False)
         except Exception:
@@ -1049,6 +1059,7 @@ def create_app(config_path=None):
                     }
                 }
             import yaml
+            _ensure_config_path_writable()
             with open(CONFIG_PATH, "w") as f:
                 yaml.dump(config_data, f, default_flow_style=False)
             return jsonify({"status": "ok", "message": "Configuration saved."})
@@ -1081,6 +1092,7 @@ def create_app(config_path=None):
                     "log_level": data.get("settings", {}).get("log_level", "INFO"),
                 }
             }
+            _ensure_config_path_writable()
             with open(CONFIG_PATH, "w") as f:
                 yaml.dump(config_data, f, default_flow_style=False)
             return jsonify({"status": "ok", "message": "Settings imported successfully. Please restart the server for all changes to take effect."})
