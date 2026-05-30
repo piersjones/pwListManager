@@ -12,13 +12,16 @@ This file serves as the master tracking, specification, and instruction document
 
 ## 1. Project Objectives & Specifications
 
-The objective of `pwListManager` is to create a lightweight, robust, Dockerized Python utility running on a Raspberry Pi 4 (ARM64) that automates media watchlist management between Trakt.tv and Letterboxd.
+The objective of `pwListManager` is to create a lightweight, robust, Dockerized Python utility running on a Raspberry Pi 4 (ARM64) that automates one-way media watchlist sync from Trakt.tv to Letterboxd, with iOS push notifications via Pushover.
+
+**This is one-way sync only: Trakt → Letterboxd.** It does not sync changes from Letterboxd back to Trakt.
 
 ### Core Requirements
 1. **Trakt Watchlist Limit Bypass (100 Items)**:
    - Trakt free accounts limit default watchlists to 100 items.
    - To bypass this: scan the default Trakt watchlist periodically.
-   - For each film found, add it to a custom Trakt list (configurable in `config.yaml`, defaulting to `movie-watchlist`), and then remove it from the default Trakt watchlist.
+   - For each film found, add it to a custom Trakt list (configurable via web UI, defaulting to `movie-watchlist`), and then remove it from the default Trakt watchlist.
+   - When the primary custom list fills up (100 items), overflow automatically to additional lists.
    - This migration must occur once during setup for existing films and automatically for all future additions.
 2. **Watchlist Addition Sync**:
    - When a movie is added to the Trakt watchlist (and thus moved to the custom Trakt list by this tool), add it to the user's Letterboxd watchlist.
@@ -44,11 +47,14 @@ The objective of `pwListManager` is to create a lightweight, robust, Dockerized 
   - Official Trakt API (OAuth via Device Authorization flow for authorization).
   - Use `requests` directly or a lightweight library (e.g. `trakt.py`), but prioritize official API calls to maximize future compatibility.
 - **Letterboxd Integration**:
-  - Since Letterboxd lacks a public write API, use **Cookie Injection**. Read session cookies (e.g., `com.xk72.webparts.csrf`) from a local configuration file or env vars to authenticate a standard Python `requests.Session()`.
-  - Perform web requests mirroring the AJAX calls that Letterboxd's web client triggers:
-    - Watchlist toggle endpoint: POST to `https://letterboxd.com/film/{slug}/toggle-watchlist/` (verify exact path in browser DevTools).
-    - Mark watched endpoint: AJAX requests to log movies.
-  - Implement a modular `LetterboxdClient` interface so it can be easily updated or replaced with a headless Playwright browser if Cloudflare security changes.
+   - Since Letterboxd lacks a public write API, use **programmatic login via `curl_cffi`** (Chrome TLS impersonation). Standard `requests` and `cloudscraper` both get 403 from Cloudflare — only `curl_cffi` with `impersonate="chrome"` works.
+   - Perform web requests mirroring the AJAX calls that Letterboxd's web client triggers:
+     - Add to watchlist: `POST /film/{slug}/add-to-watchlist/`
+     - Remove from watchlist: `POST /film/{slug}/remove-from-watchlist/`
+     - Mark as watched: `POST /s/{uid}/watch/` with `watched=true` (uid format: `film:51896`)
+     - Unmark watched: `POST /s/{uid}/watch/` with `watched=false`
+     - The film UID is extracted from `production-data` JSON embedded in the page HTML.
+   - Implement a modular `LetterboxdClient` interface so it can be easily updated or replaced with a headless Playwright browser if Cloudflare security changes.
 - **Notification Engine**:
   - Pushover REST API (POSTing to `https://api.pushover.net/1/messages.json`).
 
@@ -56,7 +62,7 @@ The objective of `pwListManager` is to create a lightweight, robust, Dockerized 
 
 ## 3. Best Practices & Design Patterns
 
-1. **State Isolation**: Keep all credentials, database files, and logs out of version control. Use `config.yaml` for parameters and `.gitignore` sensitive files.
+1. **State Isolation**: Keep all credentials, database files, and logs out of version control. Configuration is managed primarily through the web UI (Setup page) and stored in `config.yaml`. `.gitignore` excludes sensitive files.
 2. **Graceful Failures**: Wrap Letterboxd and Trakt API calls in try-except blocks. In case of authentication failures (e.g., expired cookies/tokens), log a critical error and trigger a Pushover alert.
 3. **Pebble-in-a-Shoe Prevention**:
    - Check if a movie is already synced using the SQLite DB before attempting a Letterboxd write.
@@ -77,29 +83,30 @@ The objective of `pwListManager` is to create a lightweight, robust, Dockerized 
   ├── agents.md             <-- This file
   ├── src/
   │   ├── __init__.py
-  │   ├── main.py           <-- Orchestrates daemon loop
+  │   ├── main.py           <-- CLI daemon (legacy, web UI is primary)
+  │   ├── web_server.py     <-- Web UI entry point
   │   ├── config.py         <-- Parses yaml configuration
   │   ├── database.py       <-- SQLite initialization & operations
   │   ├── trakt_client.py   <-- OAuth & list manipulation
+  │   ├── trakt_migrate.py  <-- CLI migration script (legacy)
   │   ├── letterboxd_client.py <-- Scraping & session emulation
-│   ├── notifier.py       <-- Pushover delivery & deep linking
-│   ├── rate_limiter.py   <-- Throttling, backoff & 429 handling
-│   ├── job_queue.py       <-- Background job queue with progress/ETA
-│   └── logger.py         <-- Standard logging configuration
-├── src/web/
-│   ├── __init__.py
-│   ├── app.py            <-- Flask web server & API routes
-│   ├── web_server.py     <-- Web UI entry point
-│   ├── templates/        <-- Jinja2 HTML templates
-│   │   ├── base.html
-│   │   ├── index.html
-│   │   ├── setup.html
-│   │   ├── trakt_auth.html
-│   │   ├── onboarding.html
-│   │   ├── tasks.html
-│   │   └── logs.html
-│   └── static/
-│       └── style.css
+  │   ├── notifier.py       <-- Pushover delivery & deep linking
+  │   ├── rate_limiter.py   <-- Throttling, backoff & 429 handling
+  │   ├── job_queue.py       <-- Background job queue with progress/ETA
+  │   └── logger.py         <-- Standard logging configuration
+  ├── src/web/
+  │   ├── __init__.py
+  │   ├── app.py            <-- Flask web server & API routes
+  │   ├── templates/        <-- Jinja2 HTML templates
+  │   │   ├── base.html
+  │   │   ├── index.html
+  │   │   ├── setup.html
+  │   │   ├── trakt_auth.html
+  │   │   ├── onboarding.html
+  │   │   ├── tasks.html
+  │   │   └── logs.html
+  │   └── static/
+  │       └── style.css
   └── tests/
       ├── __init__.py
       ├── test_trakt.py
@@ -115,7 +122,7 @@ The objective of `pwListManager` is to create a lightweight, robust, Dockerized 
 
 *(This section is to be updated dynamically during development when the user provides corrections or when the model makes system-level discoveries.)*
 
-- **Initial Setup**: No corrections recorded yet. Ready to start implementation.
+- **Initial Setup**: Corrections and learnings are tracked below as they are discovered during development.
 - **SQLite in-memory testing**: The original `Database` class used `get_connection()` to create a new connection per call, which caused `:memory:` databases to lose state between operations. Refactored to use a persistent connection (`_get_conn()`) so in-memory tests work correctly.
 - **Letterboxd authentication risk**: Letterboxd has no public write API. The initial approach used cookie injection, which was blocked by Cloudflare (403). The current approach uses:
   1. **Programmatic login** via `curl_cffi` (Chrome TLS impersonation) POST to `letterboxd.com/user/login.do` with username/password — bypasses Cloudflare and creates fresh session cookies each run.
@@ -216,6 +223,7 @@ The objective of `pwListManager` is to create a lightweight, robust, Dockerized 
 ### Stage 7: Docker Integration
 - [x] Create `Dockerfile` and `docker-compose.yml`.
 - [x] Add `/api/health` endpoint for Docker healthcheck.
+- [x] Create `.dockerignore` and update `.gitignore`.
 - [ ] Verify builds run cleanly on ARM64 architectures.
 
 ### Stage 8: SIMKL Integration (Backlog)
@@ -274,3 +282,6 @@ The objective of `pwListManager` is to create a lightweight, robust, Dockerized 
 - **2026-05-30**: Queue ETA now based on rolling average of recent item processing times (last 30 items) instead of overall rate since start. Eliminates wild ETA fluctuations that occurred early in large syncs. Each completed item updates the running average, so ETA settles quickly and reflects actual conditions (throttling, network speed, API latency).
 - **2026-05-30**: Fixed 415 error on queue enqueue endpoints — changed `request.json` to `request.get_json(silent=True)` so missing/wrong Content-Type doesn't raise errors. Fixed initial-sync banner reappearing after full sync — `accept` endpoint now saves snapshots immediately (was only saving during `incremental=True` expansions), so the banner doesn't come back on server restart.
 - **2026-05-30**: Dockerized the app. Created `Dockerfile` (python:3.11-slim, curl_cffi deps, healthcheck), `docker-compose.yml` (volumes for config/data/logs, port 5050, restart policy), `.dockerignore`. Added `/api/health` endpoint for Docker healthcheck. Updated `.gitignore` with IDE, OS, and OpenCode exclusions.
+- **2026-05-30**: Fixed first-time sync banner reappearing on server restart. Root cause: `take_initial_snapshots` makes live Trakt API calls that can fail. When it fails, no snapshots are saved, so on restart `snapshots_exist()` returns False and the banner shows again. Fix: `save_list_snapshot` now inserts a sentinel row (`trakt_id=0`) for empty snapshots so `snapshots_exist()` returns True even with 0 real items. `get_list_snapshot` excludes sentinels (`trakt_id > 0`). Accept and skip endpoints now save empty snapshots as fallback when `take_initial_snapshots` fails.
+- **2026-05-30**: Added auto-sync countdown timer and manual trigger. Setup page App Settings section now shows "Next auto-sync in Xm Xs" countdown that updates in real-time. Added "Sync Now" button to manually trigger an incremental auto-sync cycle. Added `/api/scheduler/trigger` endpoint. Added `next_sync_time` to scheduler state (ISO timestamp, updated after each sync cycle). Reordered setup page: App Settings now above Authentication, both collapsed by default.
+- **2026-05-30**: Initialized git repo and pushed to GitHub (private repo: piersjones/pwListManager). Added README with setup, configuration, architecture, API docs, and troubleshooting sections.
