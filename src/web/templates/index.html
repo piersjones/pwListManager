@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}pwListManager Dashboard{% endblock %}
+{% block content %}
+<div class="dashboard">
+    <h1>Dashboard</h1>
+
+    <div class="status-badges">
+        {% if config %}
+        <span class="badge badge-green">Configured</span>
+        {% else %}
+        <span class="badge badge-red">Not Configured</span>
+        <a href="/setup" class="btn btn-primary">Setup Now</a>
+        {% endif %}
+
+        <span class="badge {% if trakt_authed %}badge-green{% else %}badge-red{% endif %}">
+            Trakt {% if trakt_authed %}Connected{% else %}Not Connected{% endif %}
+        </span>
+
+        <span class="badge {% if letterboxd_ok %}badge-green{% else %}badge-yellow{% endif %}">
+            Letterboxd {% if letterboxd_ok %}Ready{% else %}Missing Credentials{% endif %}
+        </span>
+
+        <span class="badge {% if pushover_ok %}badge-green{% else %}badge-yellow{% endif %}">
+            Pushover {% if pushover_ok %}Ready{% else %}Missing Credentials{% endif %}
+        </span>
+    </div>
+
+    <div class="status-grid">
+        <div class="stat-card">
+            <div class="stat-value" id="stat-total">-</div>
+            <div class="stat-label">Movies Tracked</div>
+            <div class="stat-desc">Total unique movies known to pwListManager across all sync states</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-wl">-</div>
+            <div class="stat-label">Added to Letterboxd Watchlist</div>
+            <div class="stat-desc">Movies moved from Trakt default watchlist to your custom Trakt list and added to your Letterboxd watchlist</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-wt">-</div>
+            <div class="stat-label">Marked Watched on Letterboxd</div>
+            <div class="stat-desc">Movies that were watched on Trakt and marked as watched on Letterboxd</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-notif">-</div>
+            <div class="stat-label">Pushover Notifications Sent</div>
+            <div class="stat-desc">iOS push notifications sent when a movie was marked watched on Letterboxd (includes rate/review deeplink)</div>
+        </div>
+    </div>
+
+    <div class="section-header">
+        <h2>History</h2>
+    </div>
+
+    <div id="history-container">
+        {% if recent %}
+        <div class="history-cards">
+            {% for row in recent %}
+            <div class="history-card">
+                <div class="history-card-header">
+                    <span class="movie-title">{{ row.title }}</span>
+                    {% if row.year %}<span class="movie-year">({{ row.year }})</span>{% endif %}
+                </div>
+                <div class="history-card-progress">
+                    <div class="progress-step {% if row.watchlist_synced %}step-done{% endif %}">
+                        <span class="progress-icon">&#x2713;</span>
+                        <span class="progress-label">Moved to Custom List</span>
+                    </div>
+                    <div class="progress-connector {% if row.letterboxd_slug %}connector-done{% endif %}"></div>
+                    <div class="progress-step {% if row.letterboxd_slug %}step-done{% endif %}">
+                        <span class="progress-icon">&#x2713;</span>
+                        <span class="progress-label">On Letterboxd</span>
+                    </div>
+                    <div class="progress-connector {% if row.watched_synced %}connector-done{% endif %}"></div>
+                    <div class="progress-step {% if row.watched_synced %}step-done{% endif %}">
+                        <span class="progress-icon">&#x2713;</span>
+                        <span class="progress-label">Watched</span>
+                    </div>
+                    <div class="progress-connector {% if row.notified %}connector-done{% endif %}"></div>
+                    <div class="progress-step {% if row.notified %}step-done{% endif %}">
+                        <span class="progress-icon">&#x2713;</span>
+                        <span class="progress-label">Notified</span>
+                    </div>
+                </div>
+                <div class="history-card-links">
+                    {% if row.tmdb_id %}
+                    <a href="https://trakt.tv/movies/{{ row.trakt_slug or ('tmdb-' ~ row.tmdb_id|string) }}" target="_blank" class="link-trakt">Trakt</a>
+                    {% endif %}
+                    {% if row.letterboxd_slug %}
+                    <a href="https://letterboxd.com/film/{{ row.letterboxd_slug }}/" target="_blank" class="link-letterboxd">Letterboxd</a>
+                    {% elif row.tmdb_id %}
+                    <span class="link-pending" title="Slug not yet resolved">Letterboxd (pending)</span>
+                    {% endif %}
+                    {% if row.notified and row.letterboxd_slug %}
+                    <a href="letterboxd://x-callback-url/log?name={{ row.title | urlencode }}" class="link-rate">Rate on iOS</a>
+                    {% endif %}
+                </div>
+                <div class="history-card-actions">
+                    {% if row.tmdb_id and not row.letterboxd_slug and row.watchlist_synced %}
+                    <button onclick="quickAddLB({{ row.tmdb_id }}, '{{ row.title|e }}')" class="btn btn-sm btn-action">→ LB Watchlist</button>
+                    {% endif %}
+                    {% if row.tmdb_id and not row.watched_synced %}
+                    <button onclick="quickMarkWatched({{ row.tmdb_id }}, '{{ row.title|e }}')" class="btn btn-sm btn-action">Mark Watched</button>
+                    {% endif %}
+                </div>
+                <div class="history-card-meta">
+                    Last updated: {{ row.updated_at }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">No sync history yet. Visit the <a href="/tasks">Tasks</a> page to trigger your first sync.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+async function fetchStatus() {
+    try {
+        const resp = await fetch('/api/status');
+        const data = await resp.json();
+        document.getElementById('stat-total').textContent = data.stats.total_movies;
+        document.getElementById('stat-wl').textContent = data.stats.watchlist_synced;
+        document.getElementById('stat-wt').textContent = data.stats.watched_synced;
+        document.getElementById('stat-notif').textContent = data.stats.notified;
+    } catch(e) {
+        console.error('Failed to fetch status:', e);
+    }
+}
+
+async function fetchRecent() {
+    try {
+        const resp = await fetch('/api/recent');
+        const data = await resp.json();
+        renderHistory(data.recent || []);
+    } catch(e) {
+        console.error('Failed to fetch recent:', e);
+    }
+}
+
+function renderHistory(rows) {
+    let container = document.getElementById('history-container');
+    if (!container) return;
+    if (!rows || rows.length === 0) {
+        container.innerHTML = '<p class="empty-state">No sync history yet. Visit the <a href="/tasks">Tasks</a> page to trigger your first sync.</p>';
+        return;
+    }
+    container.innerHTML = '<div class="history-cards">' + rows.map(row => {
+        const title = escapeHtml(row.title || 'Unknown');
+        const year = row.year ? `<span class="movie-year">(${row.year})</span>` : '';
+        const tmdbId = row.tmdb_id;
+        const traktSlug = row.trakt_slug;
+        const lbSlug = row.letterboxd_slug;
+        const traktLink = tmdbId
+            ? `<a href="https://trakt.tv/movies/${traktSlug || ('tmdb-' + tmdbId)}" target="_blank" class="link-trakt">Trakt</a>`
+            : '';
+        const lbLink = lbSlug
+            ? `<a href="https://letterboxd.com/film/${lbSlug}/" target="_blank" class="link-letterboxd">Letterboxd</a>`
+            : (tmdbId ? '<span class="link-pending" title="Slug not yet resolved">Letterboxd (pending)</span>' : '');
+        const rateLink = (row.notified && lbSlug)
+            ? `<a href="letterboxd://x-callback-url/log?name=${encodeURIComponent(row.title)}" class="link-rate">Rate on iOS</a>`
+            : '';
+        const wlAction = (tmdbId && !lbSlug && row.watchlist_synced)
+            ? `<button onclick="quickAddLB(${tmdbId}, '${escapeHtml(row.title)}')" class="btn btn-sm btn-action">→ LB Watchlist</button>`
+            : '';
+        const wtAction = (tmdbId && !row.watched_synced)
+            ? `<button onclick="quickMarkWatched(${tmdbId}, '${escapeHtml(row.title)}')" class="btn btn-sm btn-action">Mark Watched</button>`
+            : '';
+        return `<div class="history-card">
+            <div class="history-card-header">
+                <span class="movie-title">${title}</span>
+                ${year}
+            </div>
+            <div class="history-card-progress">
+                <div class="progress-step ${row.watchlist_synced ? 'step-done' : ''}">
+                    <span class="progress-icon">&#x2713;</span>
+                    <span class="progress-label">Moved to Custom List</span>
+                </div>
+                <div class="progress-connector ${lbSlug ? 'connector-done' : ''}"></div>
+                <div class="progress-step ${lbSlug ? 'step-done' : ''}">
+                    <span class="progress-icon">&#x2713;</span>
+                    <span class="progress-label">On Letterboxd</span>
+                </div>
+                <div class="progress-connector ${row.watched_synced ? 'connector-done' : ''}"></div>
+                <div class="progress-step ${row.watched_synced ? 'step-done' : ''}">
+                    <span class="progress-icon">&#x2713;</span>
+                    <span class="progress-label">Watched</span>
+                </div>
+                <div class="progress-connector ${row.notified ? 'connector-done' : ''}"></div>
+                <div class="progress-step ${row.notified ? 'step-done' : ''}">
+                    <span class="progress-icon">&#x2713;</span>
+                    <span class="progress-label">Notified</span>
+                </div>
+            </div>
+            <div class="history-card-links">
+                ${traktLink}
+                ${lbLink}
+                ${rateLink}
+            </div>
+            <div class="history-card-actions">
+                ${wlAction}
+                ${wtAction}
+            </div>
+            <div class="history-card-meta">
+                Last updated: ${row.updated_at || ''}
+            </div>
+        </div>`;
+    }).join('') + '</div>';
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+fetchStatus();
+fetchRecent();
+
+// Auto-refresh stats and history every 5 seconds
+setInterval(fetchStatus, 5000);
+setInterval(fetchRecent, 5000);
+
+async function quickAddLB(tmdbId, title) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Adding...';
+    try {
+        const resp = await fetch('/actions/add-watchlist', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tmdb_id: tmdbId })
+        });
+        const data = await resp.json();
+        btn.textContent = data.success ? 'Added!' : 'Error';
+        if (data.success) setTimeout(() => location.reload(), 1500);
+        else setTimeout(() => { btn.textContent = '→ LB Watchlist'; btn.disabled = false; }, 3000);
+    } catch(e) {
+        btn.textContent = 'Failed';
+        setTimeout(() => { btn.textContent = '→ LB Watchlist'; btn.disabled = false; }, 3000);
+    }
+}
+
+async function quickMarkWatched(tmdbId, title) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Marking...';
+    try {
+        const resp = await fetch('/actions/mark-watched', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tmdb_id: tmdbId })
+        });
+        const data = await resp.json();
+        btn.textContent = data.success ? 'Watched!' : 'Error';
+        if (data.success) setTimeout(() => location.reload(), 1500);
+        else setTimeout(() => { btn.textContent = 'Mark Watched'; btn.disabled = false; }, 3000);
+    } catch(e) {
+        btn.textContent = 'Failed';
+        setTimeout(() => { btn.textContent = 'Mark Watched'; btn.disabled = false; }, 3000);
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.venv
+venv
+
+# Local data (mounted as volumes)
+data/
+logs/
+config.yaml
+config.json
+.cookie/
+
+# IDE
+.vscode
+.idea
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+
+# Tests (not needed in production image)
+tests/

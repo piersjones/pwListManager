@@ -1,0 +1,510 @@
+{% extends "base.html" %}
+{% block title %}pwListManager Tasks{% endblock %}
+{% block content %}
+<div class="tasks-page">
+    <h1>Tasks</h1>
+
+    <!-- Initial Sync Prompt -->
+    <div id="initial-sync-prompt" class="initial-sync-banner" style="display:none;">
+        <div class="initial-sync-banner-content">
+            <h2>First-Time Auto-Sync</h2>
+            <p>Auto-sync is enabled and ready to go. This is your first time — how would you like to start?</p>
+            <div class="initial-sync-options">
+                <div class="initial-sync-option">
+                    <strong>Run Full Sync</strong>
+                    <p>Sync all existing items from Trakt to Letterboxd now. Future auto-sync runs will only process new items. <em>Recommended for first-time setup.</em></p>
+                    <button onclick="acceptInitialSync()" class="btn btn-primary" id="btn-initial-accept">Run Full Sync</button>
+                    <span id="result-initial-accept"></span>
+                </div>
+                <div class="initial-sync-option">
+                    <strong>Skip, Only New Items</strong>
+                    <p>Don't sync existing items. Auto-sync will take a snapshot of your current lists and only process movies added from now on.</p>
+                    <button onclick="skipInitialSync()" class="btn" id="btn-initial-skip">Skip, Just New Items</button>
+                    <span id="result-initial-skip"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Queue Status -->
+    <div class="task-section" id="queue-section">
+        <h2>Sync Queue</h2>
+        <div id="queue-status-area">
+            <div class="queue-progress-bar">
+                <div class="queue-progress-fill" id="queue-progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="queue-info">
+                <span id="queue-progress-text">No active queue</span>
+                <span id="queue-eta-text"></span>
+            </div>
+            <div id="queue-controls" style="display:none;">
+                <button onclick="pauseQueue()" class="btn btn-sm" id="pause-btn">Pause</button>
+                <button onclick="resumeQueue()" class="btn btn-sm" id="resume-btn" style="display:none;">Resume</button>
+                <button onclick="clearQueue()" class="btn btn-sm" style="background:#4c1d1d;">Clear Queue</button>
+            </div>
+            <div id="queue-current" style="display:none; margin-top:0.5rem;">
+                <span class="task-help">Processing: </span><span id="queue-current-item"></span>
+            </div>
+            <div id="queue-errors" style="display:none; margin-top:0.5rem;"></div>
+            <div id="queue-items-area" style="margin-top:0.75rem;">
+                <div id="queue-items-pending" style="display:none;">
+                    <h3 style="font-size:0.85rem;color:#8b949e;margin:0.5rem 0 0.25rem 0;">Pending Items</h3>
+                    <div class="queue-items-list" id="queue-pending-list"></div>
+                </div>
+                <div id="queue-items-current" style="display:none;">
+                    <h3 style="font-size:0.85rem;color:#8b949e;margin:0.5rem 0 0.25rem 0;">Processing</h3>
+                    <div class="queue-items-list" id="queue-current-list"></div>
+                </div>
+                <div id="queue-items-recent" style="display:none;">
+                    <h3 style="font-size:0.85rem;color:#8b949e;margin:0.5rem 0 0.25rem 0;">Recently Completed</h3>
+                    <div class="queue-items-list" id="queue-recent-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Actions -->
+    <div class="task-section">
+        <h2>Sync Actions</h2>
+        <p class="task-help">Sync operations run in the background. Progress is shown above. You can pause or clear the queue at any time.</p>
+        <div class="action-bar">
+            <button onclick="enqueueWatchlist()" class="btn btn-primary" id="sync-wl-btn">
+                Sync Watchlist
+            </button>
+            <span class="action-hint">Trakt watchlist + custom lists → Letterboxd watchlist</span>
+            <span id="sync-wl-result"></span>
+        </div>
+        <div class="action-bar">
+            <button onclick="enqueueWatched()" class="btn btn-primary" id="sync-wt-btn">
+                Sync Watched
+            </button>
+            <span class="action-hint">Trakt watched → Letterboxd watched + push notification (includes rating transfer)</span>
+            <span id="sync-wt-result"></span>
+        </div>
+        <div class="action-bar">
+            <button onclick="enqueueMigrate()" class="btn" id="migrate-btn">
+                Migrate Watchlist Only
+            </button>
+            <span class="action-hint">Move Trakt default watchlist items to custom list (no Letterboxd action)</span>
+            <span id="migrate-result"></span>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="task-section">
+        <h2>Quick Actions</h2>
+        <div class="quick-actions">
+            <div class="action-form">
+                <label>Add to Letterboxd Watchlist (TMDb ID):</label>
+                <div class="input-row">
+                    <input type="number" id="add-wl-tmdb" placeholder="e.g. 155 for The Dark Knight">
+                    <button onclick="addWatchlist()" class="btn btn-sm">Add</button>
+                    <span id="add-wl-result"></span>
+                </div>
+            </div>
+            <div class="action-form">
+                <label>Mark as Watched on Letterboxd (TMDb ID):</label>
+                <div class="input-row">
+                    <input type="number" id="mark-wt-tmdb" placeholder="e.g. 155">
+                    <button onclick="markWatched()" class="btn btn-sm">Mark Watched</button>
+                    <span id="mark-wt-result"></span>
+                </div>
+            </div>
+            <div class="action-form">
+                <label>Test Pushover Notification:</label>
+                <button onclick="testPushover()" class="btn btn-sm">Send Test</button>
+                <span id="pushover-result"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trakt Watchlist -->
+    <div class="task-section">
+        <h2>Trakt Watchlist</h2>
+        {% if not trakt_authed %}
+        <p class="empty-state">Trakt is not connected. <a href="/trakt-auth">Authenticate with Trakt</a> to view your watchlist.</p>
+        {% else %}
+        <p class="task-help">Click "Load Watchlist" to fetch your current Trakt default watchlist (may take a few seconds).</p>
+        <button onclick="loadWatchlist()" class="btn btn-sm" id="load-wl-btn">Load Watchlist</button>
+        <span id="load-wl-result"></span>
+        <div id="watchlist-table" style="display:none; margin-top:1rem;">
+            <div class="task-table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>Title</th><th>Year</th><th>Actions</th></tr></thead>
+                    <tbody id="watchlist-tbody"></tbody>
+                </table>
+            </div>
+            <span id="watchlist-count" class="task-help"></span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function updateQueueStatus() {
+    fetch('/api/queue/status').then(r => r.json()).then(data => {
+        const running = data.running;
+        const paused = data.paused;
+        const progress = data.progress || 0;
+        const total = data.total || 0;
+        const remaining = data.remaining || 0;
+        const eta = data.eta || '--:--';
+        const current = data.current_job;
+        const error = data.error;
+
+        const pct = total > 0 ? Math.round((progress / total) * 100) : 0;
+        document.getElementById('queue-progress-fill').style.width = pct + '%';
+
+        const controls = document.getElementById('queue-controls');
+        const currentItem = document.getElementById('queue-current');
+
+        if (error) {
+            document.getElementById('queue-progress-text').textContent = 'Error: ' + error;
+            document.getElementById('queue-eta-text').textContent = '';
+            controls.style.display = 'flex';
+            currentItem.style.display = 'none';
+            document.getElementById('pause-btn').style.display = 'none';
+            document.getElementById('resume-btn').style.display = 'none';
+            document.getElementById('queue-progress-fill').style.background = '#f85149';
+        } else if (running && !paused) {
+            // Queue is actively processing
+            controls.style.display = 'flex';
+            currentItem.style.display = 'block';
+            document.getElementById('pause-btn').style.display = 'inline-block';
+            document.getElementById('resume-btn').style.display = 'none';
+            document.getElementById('queue-progress-text').textContent = `${progress}/${total} done`;
+            document.getElementById('queue-eta-text').textContent = `ETA: ${eta}`;
+            document.getElementById('queue-current-item').textContent =
+                current ? `${current.title || current.type}` : '—';
+        } else if (paused) {
+            // Queue is paused (thread may be alive and waiting, or dead)
+            controls.style.display = 'flex';
+            currentItem.style.display = remaining > 0 ? 'block' : 'none';
+            document.getElementById('pause-btn').style.display = 'none';
+            document.getElementById('resume-btn').style.display = 'inline-block';
+            document.getElementById('queue-progress-text').textContent =
+                remaining > 0 ? `Paused — ${progress}/${total}` : 'Paused (empty)';
+            document.getElementById('queue-eta-text').textContent = '';
+            document.getElementById('queue-current-item').textContent =
+                current ? `${current.title || current.type}` : '—';
+        } else if (progress > 0) {
+            // Queue completed
+            controls.style.display = 'flex';
+            currentItem.style.display = 'none';
+            document.getElementById('queue-progress-text').textContent = `Complete — ${progress}/${total}`;
+            document.getElementById('queue-eta-text').textContent = '';
+            document.getElementById('pause-btn').style.display = 'none';
+            document.getElementById('resume-btn').style.display = 'none';
+        } else {
+            // No active queue
+            controls.style.display = 'none';
+            currentItem.style.display = 'none';
+            document.getElementById('queue-progress-text').textContent = 'No active queue';
+            document.getElementById('queue-eta-text').textContent = '';
+            document.getElementById('queue-progress-fill').style.background = '#238636';
+        }
+
+        // Show recent errors from processed items
+        const recentProcessed = data.recent_processed || [];
+        const errors = recentProcessed.filter(p => p.status === 'error');
+        const errorsDiv = document.getElementById('queue-errors');
+        if (errors.length > 0) {
+            errorsDiv.style.display = 'block';
+            errorsDiv.innerHTML = '<span style="color:#f85149;font-size:0.85rem;">Last error: ' + errors[errors.length-1].error + '</span>';
+        } else {
+            errorsDiv.style.display = 'none';
+        }
+
+        // Update queue items lists
+        renderQueueItems('queue-pending-list', (data.queue || []), null);
+        renderQueueItems('queue-current-list', current ? [current] : [], 'processing');
+        renderQueueItems('queue-recent-list', (data.recent_processed || []).slice(0, 10), 'processed');
+
+        document.getElementById('queue-items-pending').style.display =
+            (data.queue || []).length > 0 ? 'block' : 'none';
+        document.getElementById('queue-items-current').style.display =
+            current ? 'block' : 'none';
+        document.getElementById('queue-items-recent').style.display =
+            (data.recent_processed || []).length > 0 ? 'block' : 'none';
+
+        // Enable/disable sync buttons based on queue state
+        const queueActive = running || paused;
+        const btnsDisabled = running && !paused; // disable only when actively processing
+        document.getElementById('sync-wl-btn').disabled = btnsDisabled;
+        document.getElementById('sync-wt-btn').disabled = btnsDisabled;
+        document.getElementById('migrate-btn').disabled = btnsDisabled;
+    }).catch(() => {});
+}
+
+setInterval(updateQueueStatus, 2000);
+updateQueueStatus();
+
+async function enqueueWatchlist() {
+    const btn = document.getElementById('sync-wl-btn');
+    const result = document.getElementById('sync-wl-result');
+    btn.disabled = true;
+    result.textContent = 'Starting...';
+    try {
+        const resp = await fetch('/api/queue/enqueue/watchlist', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ suppress_notifications: true })
+        });
+        const data = await resp.json();
+        if (data.error) { result.textContent = 'Error: ' + data.error; btn.disabled = false; return; }
+        result.textContent = data.message || 'Started';
+        updateQueueStatus();
+    } catch(e) { result.textContent = 'Error: ' + e.message; }
+}
+
+async function enqueueWatched() {
+    const btn = document.getElementById('sync-wt-btn');
+    const result = document.getElementById('sync-wt-result');
+    btn.disabled = true;
+    result.textContent = 'Starting...';
+    try {
+        const resp = await fetch('/api/queue/enqueue/watched', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ suppress_notifications: true })
+        });
+        const data = await resp.json();
+        if (data.error) { result.textContent = 'Error: ' + data.error; btn.disabled = false; return; }
+        result.textContent = data.message || 'Started';
+        updateQueueStatus();
+    } catch(e) { result.textContent = 'Error: ' + e.message; }
+}
+
+async function enqueueMigrate() {
+    const btn = document.getElementById('migrate-btn');
+    const result = document.getElementById('migrate-result');
+    btn.disabled = true;
+    result.textContent = 'Starting...';
+    try {
+        const resp = await fetch('/api/queue/enqueue/migrate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ suppress_notifications: true })
+        });
+        const data = await resp.json();
+        if (data.error) { result.textContent = 'Error: ' + data.error; return; }
+        result.textContent = data.message || 'Started';
+        updateQueueStatus();
+    } catch(e) { result.textContent = 'Error: ' + e.message; }
+}
+
+async function pauseQueue() { await fetch('/api/queue/pause', {method:'POST'}); updateQueueStatus(); }
+async function resumeQueue() { await fetch('/api/queue/resume', {method:'POST'}); updateQueueStatus(); }
+async function clearQueue() {
+    if (confirm('Clear the queue? This stops processing and removes all queued items.')) {
+        await fetch('/api/queue/clear', {method:'POST'}); updateQueueStatus();
+    }
+}
+
+function renderQueueItems(elementId, items, mode) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    if (!items || items.length === 0) {
+        el.innerHTML = '<div class="queue-item-empty">No items</div>';
+        return;
+    }
+    el.innerHTML = items.map(item => {
+        const title = item.title || item.type || 'Unknown';
+        const typeLabel = getQueueTypeLabel(item.type || '');
+        let statusBadge = '';
+        if (mode === 'processed') {
+            if (item.status === 'error') {
+                statusBadge = '<span class="queue-badge queue-badge-error" title="' + (item.error || '') + '">Error</span>';
+            } else if (item.status === 'done') {
+                statusBadge = '<span class="queue-badge queue-badge-done">Done</span>';
+            }
+        } else if (mode === 'processing') {
+            statusBadge = '<span class="queue-badge queue-badge-processing">In Progress</span>';
+        }
+        return '<div class="queue-item">' +
+            '<span class="queue-type-badge">' + typeLabel + '</span> ' +
+            '<span class="queue-item-title">' + escapeHtml(title) + '</span> ' +
+            statusBadge +
+            '</div>';
+    }).join('');
+}
+
+function getQueueTypeLabel(type) {
+    const labels = {
+        'add_to_letterboxd_watchlist': 'Letterboxd WL',
+        'mark_watched': 'Letterboxd Watched',
+        'migrate_trakt_watchlist': 'Trakt Sync',
+        'sync_watched_all': 'Watched Sync',
+        'sync_watchlist_all': 'Watchlist Sync',
+        'migrate_movie': 'Trakt List',
+        'rate_movie': 'Rate',
+    };
+    return labels[type] || type;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+async function addWatchlist() {
+    const tmdbId = document.getElementById('add-wl-tmdb').value;
+    const result = document.getElementById('add-wl-result');
+    if (!tmdbId) { result.textContent = 'Enter a TMDb ID'; return; }
+    result.textContent = 'Adding...';
+    try {
+        const resp = await fetch('/actions/add-watchlist', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tmdb_id: parseInt(tmdbId) })
+        });
+        const data = await resp.json();
+        result.textContent = data.success ? 'Added!' : 'Error: ' + (data.error || 'Failed');
+    } catch(e) { result.textContent = 'Error: ' + e.message; }
+}
+
+async function markWatched() {
+    const tmdbId = document.getElementById('mark-wt-tmdb').value;
+    const result = document.getElementById('mark-wt-result');
+    if (!tmdbId) { result.textContent = 'Enter a TMDb ID'; return; }
+    result.textContent = 'Marking...';
+    try {
+        const resp = await fetch('/actions/mark-watched', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tmdb_id: parseInt(tmdbId) })
+        });
+        const data = await resp.json();
+        result.textContent = data.success ? 'Marked!' : 'Error: ' + (data.error || 'Failed');
+    } catch(e) { result.textContent = 'Error: ' + e.message; }
+}
+
+async function testPushover() {
+    const result = document.getElementById('pushover-result');
+    result.textContent = 'Sending...';
+    try {
+        const resp = await fetch('/test-pushover');
+        const data = await resp.json();
+        result.textContent = data.success ? 'Sent!' : 'Error: ' + (data.error || 'Failed');
+    } catch(e) { result.textContent = 'Error: ' + e.message; }
+}
+
+async function loadWatchlist() {
+    const btn = document.getElementById('load-wl-btn');
+    const result = document.getElementById('load-wl-result');
+    const tableDiv = document.getElementById('watchlist-table');
+    const tbody = document.getElementById('watchlist-tbody');
+    const countSpan = document.getElementById('watchlist-count');
+    btn.disabled = true;
+    result.textContent = 'Loading...';
+    try {
+        const resp = await fetch('/api/trakt/watchlist');
+        const data = await resp.json();
+        if (data.error) { result.textContent = 'Error: ' + data.error; btn.disabled = false; return; }
+        tbody.innerHTML = '';
+        const movies = data.movies || [];
+        for (const m of movies) {
+            const slug = m.slug || '';
+            const traktLink = slug
+                ? `<a href="https://trakt.tv/movies/${slug}" target="_blank" class="link-trakt">Trakt</a>`
+                : (m.tmdb_id ? `<a href="https://www.themoviedb.org/movie/${m.tmdb_id}" target="_blank" class="link-trakt">TMDb</a>` : '');
+            const actions = m.tmdb_id
+                ? `<button onclick="addSingleWatchlist(${m.tmdb_id})" class="btn btn-sm">+LB</button> <button onclick="markSingleWatched(${m.tmdb_id})" class="btn btn-sm">Watched</button>`
+                : '';
+            tbody.innerHTML += `<tr><td>${m.title} ${traktLink}</td><td>${m.year || '-'}</td><td>${actions}</td></tr>`;
+        }
+        countSpan.textContent = `Showing ${movies.length} of ${data.total} movies`;
+        tableDiv.style.display = 'block';
+        result.textContent = '';
+    } catch(e) { result.textContent = 'Error: ' + e.message; }
+    btn.disabled = false;
+}
+
+function addSingleWatchlist(tmdbId) {
+    fetch('/actions/add-watchlist', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ tmdb_id: tmdbId })
+    }).then(r => r.json()).then(data => {
+        alert(data.success ? 'Added to Letterboxd watchlist!' : 'Error: ' + (data.error || 'Failed'));
+    }).catch(() => { alert('Request failed'); });
+}
+
+function markSingleWatched(tmdbId) {
+    fetch('/actions/mark-watched', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ tmdb_id: tmdbId })
+    }).then(r => r.json()).then(data => {
+        alert(data.success ? 'Marked as watched!' : 'Error: ' + (data.error || 'Failed'));
+    }).catch(() => { alert('Request failed'); });
+}
+
+// --- Initial Sync Prompt ---
+async function checkInitialSyncStatus() {
+    try {
+        const resp = await fetch('/api/scheduler/status');
+        const data = await resp.json();
+        const prompt = document.getElementById('initial-sync-prompt');
+        if (data.initial_sync_pending) {
+            prompt.style.display = 'block';
+        } else {
+            prompt.style.display = 'none';
+        }
+    } catch(e) {
+        // Scheduler status not critical
+    }
+}
+
+async function acceptInitialSync() {
+    const btn = document.getElementById('btn-initial-accept');
+    const result = document.getElementById('result-initial-accept');
+    btn.disabled = true;
+    result.textContent = 'Starting full sync...';
+    try {
+        const resp = await fetch('/api/scheduler/initial-sync/accept', { method: 'POST' });
+        const data = await resp.json();
+        if (data.error) {
+            result.textContent = 'Error: ' + data.error;
+            btn.disabled = false;
+        } else {
+            result.textContent = 'Sync queued!';
+            btn.textContent = 'Queued';
+            document.getElementById('btn-initial-skip').disabled = true;
+            updateQueueStatus();
+            setTimeout(() => {
+                document.getElementById('initial-sync-prompt').style.display = 'none';
+            }, 2000);
+        }
+    } catch(e) {
+        result.textContent = 'Error: ' + e.message;
+        btn.disabled = false;
+    }
+}
+
+async function skipInitialSync() {
+    const btn = document.getElementById('btn-initial-skip');
+    const result = document.getElementById('result-initial-skip');
+    btn.disabled = true;
+    result.textContent = 'Taking snapshots...';
+    try {
+        const resp = await fetch('/api/scheduler/initial-sync/skip', { method: 'POST' });
+        const data = await resp.json();
+        if (data.error) {
+            result.textContent = 'Error: ' + data.error;
+            btn.disabled = false;
+        } else {
+            result.textContent = 'Snapshots saved!';
+            btn.textContent = 'Done';
+            document.getElementById('btn-initial-accept').disabled = true;
+            setTimeout(() => {
+                document.getElementById('initial-sync-prompt').style.display = 'none';
+            }, 2000);
+        }
+    } catch(e) {
+        result.textContent = 'Error: ' + e.message;
+        btn.disabled = false;
+    }
+}
+
+// Check initial sync status on load
+checkInitialSyncStatus();
+</script>
+{% endblock %}

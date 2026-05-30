@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}pwListManager Setup Complete{% endblock %}
+{% block content %}
+<div class="onboarding-page">
+    <h1>Setup Complete!</h1>
+    <p class="onboarding-desc">Your Trakt account is connected. You can now run your first sync. Notifications are <strong>disabled during initial sync</strong> so you won't be flooded with alerts for your entire watchlist/history.</p>
+    <p class="onboarding-desc">Auto-sync will run every {{ sync_interval }} minutes. These actions are also available on the <a href="/tasks">Tasks</a> page at any time.</p>
+
+    <div class="onboarding-actions">
+        <div class="onboarding-card">
+            <h2>Migrate Trakt Watchlist</h2>
+            <p>Move movies from your default Trakt watchlist to your custom list(s). This bypasses the 100-item limit on free accounts.</p>
+            <button onclick="runSync('migrate')" class="btn btn-primary" id="btn-migrate">Run Migration</button>
+            <span id="result-migrate"></span>
+        </div>
+
+        <div class="onboarding-card">
+            <h2>Sync Watchlist to Letterboxd</h2>
+            <p>Add all your Trakt watchlist movies to your Letterboxd watchlist.</p>
+            <button onclick="runSync('watchlist')" class="btn btn-primary" id="btn-watchlist">Sync Watchlist</button>
+            <span id="result-watchlist"></span>
+        </div>
+
+        <div class="onboarding-card">
+            <h2>Sync Watched to Letterboxd</h2>
+            <p>Mark all your Trakt watched movies as watched on Letterboxd. Ratings are also transferred.</p>
+            <button onclick="runSync('watched')" class="btn btn-primary" id="btn-watched">Sync Watched</button>
+            <span id="result-watched"></span>
+        </div>
+    </div>
+
+    <div class="onboarding-footer">
+        <a href="/" class="btn">Skip to Dashboard</a>
+    </div>
+</div>
+
+<script>
+async function runSync(type) {
+    const btnId = 'btn-' + type.replace('watchlist', 'watchlist').replace('watched', 'watched').replace('migrate', 'migrate');
+    const resultId = 'result-' + type;
+    let btn, result;
+    if (type === 'migrate') { btn = document.getElementById('btn-migrate'); result = document.getElementById('result-migrate'); }
+    else if (type === 'watchlist') { btn = document.getElementById('btn-watchlist'); result = document.getElementById('result-watchlist'); }
+    else { btn = document.getElementById('btn-watched'); result = document.getElementById('result-watched'); }
+
+    btn.disabled = true;
+    result.textContent = 'Starting...';
+
+    const endpoints = {
+        migrate: '/api/queue/enqueue/migrate',
+        watchlist: '/api/queue/enqueue/watchlist',
+        watched: '/api/queue/enqueue/watched',
+    };
+
+    try {
+        const resp = await fetch(endpoints[type], {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ suppress_notifications: true })
+        });
+        const data = await resp.json();
+        if (data.error) {
+            result.textContent = 'Error: ' + data.error;
+            btn.disabled = false;
+        } else {
+            result.textContent = 'Queued!';
+            btn.textContent = 'Queued';
+        }
+    } catch(e) {
+        result.textContent = 'Error: ' + e.message;
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

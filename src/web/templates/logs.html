@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}pwListManager Logs{% endblock %}
+{% block content %}
+<div class="logs-page">
+    <h1>Application Logs</h1>
+    <div class="log-controls">
+        <button onclick="refreshLogs()" class="btn btn-sm">Refresh</button>
+        <label class="auto-refresh">
+            <input type="checkbox" id="auto-refresh" checked> Auto-refresh (5s)
+        </label>
+    </div>
+    <div class="log-container">
+        {% if log_lines %}
+        <pre class="log-output">{% for line in log_lines %}{{ line }}{% endfor %}</pre>
+        {% else %}
+        <p class="empty-state">No log entries found. The log file may not exist yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+let autoRefreshInterval = null;
+
+async function refreshLogs() {
+    try {
+        const resp = await fetch('/logs');
+        const html = await resp.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const logEl = doc.querySelector('.log-output');
+        const container = document.querySelector('.log-output');
+        if (logEl && container) {
+            container.innerHTML = logEl.innerHTML;
+            container.scrollTop = container.scrollHeight;
+        }
+    } catch(e) {
+        console.error('Failed to refresh logs:', e);
+    }
+}
+
+document.getElementById('auto-refresh').addEventListener('change', function() {
+    if (this.checked) {
+        autoRefreshInterval = setInterval(refreshLogs, 5000);
+    } else {
+        clearInterval(autoRefreshInterval);
+    }
+});
+
+// Start auto-refresh
+autoRefreshInterval = setInterval(refreshLogs, 5000);
+
+// Scroll to bottom on load
+const logEl = document.querySelector('.log-output');
+if (logEl) logEl.scrollTop = logEl.scrollHeight;
+</script>
+{% endblock %}

@@ -1,0 +1,20 @@
+services:
+  pwlistmanager:
+    build: .
+    container_name: pwlistmanager
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    volumes:
+      # Persist config, database, and logs outside the container
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

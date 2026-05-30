@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}pwListManager Trakt Authentication{% endblock %}
+{% block content %}
+<div class="setup-page">
+    <h1>Trakt Authentication</h1>
+    <p>This will authenticate your app with Trakt.tv using their Device Authorization flow.</p>
+
+    <div id="auth-step-1">
+        <h2>Step 1: Authorize</h2>
+        <p>Click the button below to get your activation code, then visit <a href="https://trakt.tv/activate" target="_blank">trakt.tv/activate</a> and enter the code.</p>
+        <button onclick="startAuth()" class="btn btn-primary btn-lg" id="start-btn">Get Activation Code</button>
+        <div id="auth-code-display" style="display:none; margin-top:1rem;">
+            <div class="auth-code-box">
+                <span id="user-code">---</span>
+            </div>
+            <p>Go to <strong><a href="https://trakt.tv/activate" target="_blank">https://trakt.tv/activate</a></strong> and enter this code.</p>
+        </div>
+    </div>
+
+    <div id="auth-step-2" style="display:none;">
+        <h2>Step 2: Waiting for Authorization</h2>
+        <div class="spinner"></div>
+        <p id="poll-status">Polling Trakt for authorization...</p>
+    </div>
+
+    <div id="auth-success" style="display:none;">
+        <h2>&#10003; Authenticated!</h2>
+        <p>Your Trakt account is now linked. Now set up Letterboxd and Pushover to complete configuration.</p>
+        <p>Redirecting to setup page...</p>
+    </div>
+
+    <div id="auth-error" style="display:none;">
+        <h2>&#10007; Error</h2>
+        <p id="error-message"></p>
+        <button onclick="location.reload()" class="btn">Try Again</button>
+    </div>
+</div>
+
+<script>
+let deviceCode = null;
+let pollInterval = null;
+let pollCount = 0;
+const MAX_POLLS = 120; // Stop after ~10 minutes (120 * 5s)
+let consecutiveErrors = 0;
+const MAX_CONSECUTIVE_ERRORS = 15;
+
+async function startAuth() {
+    document.getElementById('start-btn').disabled = true;
+    document.getElementById('start-btn').textContent = 'Loading...';
+    try {
+        const resp = await fetch('/trakt-auth/start');
+        const data = await resp.json();
+        if (data.error) {
+            document.getElementById('error-message').textContent = data.error;
+            document.getElementById('auth-error').style.display = 'block';
+            return;
+        }
+        deviceCode = data.device_code;
+        document.getElementById('user-code').textContent = data.user_code;
+        document.getElementById('auth-code-display').style.display = 'block';
+        document.getElementById('auth-step-2').style.display = 'block';
+
+        pollCount = 0;
+        consecutiveErrors = 0;
+        pollInterval = setInterval(() => pollTrakt(data.interval || 5), (data.interval || 5) * 1000);
+    } catch(e) {
+        document.getElementById('error-message').textContent = 'Failed to start auth: ' + e.message;
+        document.getElementById('auth-error').style.display = 'block';
+    }
+}
+
+async function pollTrakt() {
+    if (!deviceCode) return;
+
+    pollCount++;
+    if (pollCount > MAX_POLLS) {
+        clearInterval(pollInterval);
+        document.getElementById('error-message').textContent = 'Authorization timed out. The activation code expired. Please reload and try again.';
+        document.getElementById('auth-error').style.display = 'block';
+        return;
+    }
+
+    try {
+        const resp = await fetch('/trakt-auth/poll', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ device_code: deviceCode })
+        });
+        const data = await resp.json();
+        consecutiveErrors = 0;
+
+        if (data.status === 'success') {
+            clearInterval(pollInterval);
+            document.getElementById('auth-step-1').style.display = 'none';
+            document.getElementById('auth-step-2').style.display = 'none';
+            document.getElementById('auth-success').style.display = 'block';
+            setTimeout(() => { window.location.href = data.redirect || '/setup'; }, 2000);
+        } else if (data.status === 'pending') {
+            document.getElementById('poll-status').textContent = 'Waiting for you to authorize on trakt.tv/activate...';
+        } else if (data.status === 'slow_down') {
+            // Will just wait longer next poll
+        } else {
+            // Unexpected status — show error but keep polling (might recover)
+            document.getElementById('poll-status').textContent = data.message || 'Waiting...';
+            if (data.message) {
+                document.getElementById('error-message').textContent = data.message;
+                document.getElementById('auth-error').style.display = 'block';
+            }
+        }
+    } catch(e) {
+        consecutiveErrors++;
+        if (consecutiveErrors > MAX_CONSECUTIVE_ERRORS) {
+            clearInterval(pollInterval);
+            document.getElementById('error-message').textContent = 'Connection lost. Please reload and try again.';
+            document.getElementById('auth-error').style.display = 'block';
+        }
+        // Otherwise keep polling silently
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,631 @@
+{% extends "base.html" %}
+{% block title %}pwListManager Setup{% endblock %}
+{% block content %}
+<div class="setup-page">
+    <h1>{% if not config or not config.trakt_client_id %}Welcome to pwListManager{% else %}Setup & Configuration{% endif %}</h1>
+
+    {% if not config or not config.trakt_client_id %}
+    <div class="flash flash-warning">No configuration found. Fill in your credentials below to get started.</div>
+    {% else %}
+    <div class="flash flash-info">Current configuration loaded. Edit any field to update.</div>
+    {% endif %}
+
+    <form method="POST" action="/setup" id="setup-form">
+
+    <!-- Authentication & Connection Tests -->
+    <details class="collapsible-section" open>
+        <summary class="collapsible-header">
+            <span class="collapsible-icon">&#9660;</span>
+            Authentication & Connection Tests
+        </summary>
+        <div class="collapsible-body">
+
+            <!-- Trakt -->
+            <div class="form-section">
+                <h2>Trakt.tv</h2>
+                <p class="form-help">Create a Trakt API app at <a href="https://trakt.tv/oauth/applications" target="_blank">trakt.tv/oauth/applications</a>. Set Redirect URI to <code>urn:ietf:wg:oauth:2.0:oob</code>.</p>
+                <div class="form-group">
+                    <label for="trakt_client_id">Client ID</label>
+                    <input type="text" id="trakt_client_id" name="trakt_client_id" value="{{ config.trakt_client_id if config else '' }}" placeholder="Your Trakt Client ID" required>
+                </div>
+                <div class="form-group">
+                    <label for="trakt_client_secret">Client Secret</label>
+                    <div class="input-with-toggle">
+                        <input type="password" id="trakt_client_secret" name="trakt_client_secret" value="{{ config.trakt_client_secret if config else '' }}" placeholder="Your Trakt Client Secret" required>
+                        <button type="button" class="toggle-visibility" onclick="toggleVisibility('trakt_client_secret')" title="Show/hide">&#128065;</button>
+                    </div>
+                </div>
+
+                <div class="test-row">
+                    <div class="test-group">
+                        <button type="button" onclick="saveAndAuth()" class="btn btn-sm btn-primary" id="auth-btn">Authenticate with Trakt</button>
+                        <span id="trakt-auth-status" class="test-result">
+                            {% if trakt_authed %}<span class="badge badge-green">Authenticated</span>{% else %}<span class="badge badge-red">Not authenticated</span>{% endif %}
+                        </span>
+                    </div>
+                    <div class="test-group">
+                        <button type="button" onclick="testTrakt()" class="btn btn-sm">Test Connection</button>
+                        <span id="trakt-result" class="test-result"></span>
+                    </div>
+                </div>
+
+                <!-- List Selector (disabled until authenticated) -->
+                <div class="form-group {% if not trakt_authed %}disabled-section{% endif %}" id="list-selector-section">
+                    <label>Custom Lists</label>
+                    <p class="form-help" style="margin-top:0;">Select which Trakt lists to sync movies from. The primary list is where new watchlist movies are migrated to. Overflow lists are used when the primary fills up (100 items).</p>
+                    {% if not trakt_authed %}
+                    <p class="form-help" style="color:#e67e22;"><em>Authenticate with Trakt above to manage custom lists.</em></p>
+                    {% endif %}
+                    <div id="list-slots">
+                        <!-- Populated by JS -->
+                    </div>
+                    <input type="hidden" id="trakt_custom_list_names" name="trakt_custom_list_names" value="{{ config.trakt_custom_list_names | join(', ') if config else 'movie-watchlist' }}">
+                    <div class="list-slot-actions">
+                        <button type="button" onclick="addListSlot()" class="btn btn-sm btn-link" id="add-slot-btn">+ Add Overflow List</button>
+                        <button type="button" onclick="removeLastListSlot()" class="btn btn-sm btn-link" id="remove-slot-btn" style="display:none;">&minus; Remove Last</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Letterboxd -->
+            <div class="form-section">
+                <h2>Letterboxd</h2>
+                <p class="form-help">Your Letterboxd credentials. The app logs in programmatically via <code>curl_cffi</code> (Chrome TLS fingerprint) to bypass Cloudflare.</p>
+                <div class="form-group">
+                    <label for="letterboxd_username">Username</label>
+                    <input type="text" id="letterboxd_username" name="letterboxd_username" value="{{ config.letterboxd_username if config else '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="letterboxd_password">Password</label>
+                    <div class="input-with-toggle">
+                        <input type="password" id="letterboxd_password" name="letterboxd_password" value="{{ config.letterboxd_password if config else '' }}" placeholder="Stored locally only" required>
+                        <button type="button" class="toggle-visibility" onclick="toggleVisibility('letterboxd_password')" title="Show/hide">&#128065;</button>
+                    </div>
+                </div>
+                <div class="test-row">
+                    <button type="button" onclick="testLetterboxd()" class="btn btn-sm">Test Connection</button>
+                    <span id="letterboxd-result" class="test-result"></span>
+                </div>
+            </div>
+
+            <!-- Pushover -->
+            <div class="form-section">
+                <h2>Pushover</h2>
+                <p class="form-help">Create a Pushover app at <a href="https://pushover.net/apps/build" target="_blank">pushover.net/apps/build</a>.</p>
+                <div class="form-group">
+                    <label for="pushover_user_key">User Key</label>
+                    <input type="text" id="pushover_user_key" name="pushover_user_key" value="{{ config.pushover_user_key if config else '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="pushover_api_token">API Token</label>
+                    <div class="input-with-toggle">
+                        <input type="password" id="pushover_api_token" name="pushover_api_token" value="{{ config.pushover_api_token if config else '' }}" required>
+                        <button type="button" class="toggle-visibility" onclick="toggleVisibility('pushover_api_token')" title="Show/hide">&#128065;</button>
+                    </div>
+                </div>
+                <div class="test-row">
+                    <button type="button" onclick="testPushover()" class="btn btn-sm">Test Notification</button>
+                    <span id="pushover-result" class="test-result"></span>
+                </div>
+            </div>
+
+        </div>
+    </details>
+
+    <!-- App Settings -->
+    <details class="collapsible-section" {% if not config %}open{% endif %}>
+        <summary class="collapsible-header">
+            <span class="collapsible-icon">&#9654;</span>
+            App Settings
+        </summary>
+        <div class="collapsible-body">
+            <div class="form-section">
+                <div class="form-group">
+                    <label for="sync_interval_minutes">Sync Interval (minutes)</label>
+                    <input type="number" id="sync_interval_minutes" name="sync_interval_minutes" value="{{ config.sync_interval_minutes if config else 15 }}" min="1">
+                    <p class="form-help" style="margin-top:0.25rem;">How often the auto-sync runs. Changes take effect after saving.</p>
+                </div>
+                <div class="form-group">
+                    <label for="log_level">Log Level</label>
+                    <select id="log_level" name="log_level">
+                        <option value="DEBUG" {% if config and config.log_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                        <option value="INFO" {% if not config or config.log_level == 'INFO' %}selected{% endif %}>INFO</option>
+                        <option value="WARNING" {% if config and config.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                        <option value="ERROR" {% if config and config.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                    </select>
+                </div>
+                {% if config %}
+                <div class="form-group">
+                    <label>Auto-Sync</label>
+                    <div class="test-row">
+                        <button type="button" onclick="toggleAutoSync()" class="btn btn-sm" id="auto-sync-btn">Loading...</button>
+                        <span id="auto-sync-status" class="test-result"></span>
+                    </div>
+                    <p class="form-help" style="margin-top:0.25rem;">Automatically syncs watchlist and watched movies from Trakt to Letterboxd on the configured interval.</p>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if config %}
+            <div class="form-section">
+                <h2>Export / Import Settings</h2>
+                <p class="form-help">Export your configuration to a JSON file for backup, or import from a previous backup.</p>
+                <div class="test-row">
+                    <button type="button" onclick="exportSettings()" class="btn btn-sm">Export Settings</button>
+                    <button type="button" onclick="document.getElementById('import-file').click()" class="btn btn-sm btn-link">Import Settings</button>
+                    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importSettings(event)">
+                    <span id="import-result" class="test-result"></span>
+                </div>
+                <div class="flash flash-warning" style="margin-top:0.5rem; font-size:0.8rem;">
+                    <strong>Warning:</strong> Exported settings include all credentials (API keys, passwords, tokens). Do not share this file with anyone.
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+        <button type="submit" class="btn btn-primary btn-lg" style="margin-top:1rem;">Save Configuration</button>
+    </form>
+
+    {% if config %}
+    <!-- Danger Zone -->
+    <details class="collapsible-section collapsible-danger">
+        <summary class="collapsible-header">
+            <span class="collapsible-icon">&#9654;</span>
+            Danger Zone
+        </summary>
+        <div class="collapsible-body">
+            <div class="form-section form-section-danger">
+                <p class="form-help">These actions are destructive and cannot be undone.</p>
+                <div class="danger-actions">
+                    <div class="danger-action">
+                        <div class="danger-action-info">
+                            <strong>Erase History</strong>
+                            <span class="form-help">Clears all sync history from the database. Configuration and authentication are preserved.</span>
+                        </div>
+                        <button onclick="confirmEraseHistory()" class="btn btn-danger">Erase History</button>
+                    </div>
+                    <div class="danger-action">
+                        <div class="danger-action-info">
+                            <strong>Factory Reset</strong>
+                            <span class="form-help">Deletes configuration, database, queue data, and authentication tokens. Completely resets the application.</span>
+                        </div>
+                        <button onclick="confirmFactoryReset()" class="btn btn-danger">Factory Reset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </details>
+    {% endif %}
+</div>
+
+<!-- Create List Modal -->
+<div id="create-list-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <h2>Create New Trakt List</h2>
+        <div class="form-group">
+            <label for="new-list-name">List Name</label>
+            <input type="text" id="new-list-name" placeholder="e.g. movie-watchlist-2">
+        </div>
+        <div id="create-list-error" class="test-result test-error" style="display:none;"></div>
+        <div class="modal-actions">
+            <button onclick="createListFromModal()" class="btn btn-primary" id="create-list-btn">Create List</button>
+            <button onclick="closeCreateListModal()" class="btn btn-link">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- Password/secret reveal toggle ---
+function toggleVisibility(fieldId) {
+    const input = document.getElementById(fieldId);
+    if (input.type === 'password') {
+        input.type = 'text';
+    } else {
+        input.type = 'password';
+    }
+}
+
+// --- Collapsible section toggle ---
+document.querySelectorAll('.collapsible-section').forEach(section => {
+    const observer = new MutationObserver(() => {
+        const icon = section.querySelector('.collapsible-icon');
+        if (icon) {
+            icon.innerHTML = section.hasAttribute('open') ? '&#9660;' : '&#9654;';
+        }
+    });
+    observer.observe(section, { attributes: true, attributeFilter: ['open'] });
+});
+
+// --- List Selector ---
+let traktLists = [];
+let listSlots = [];
+let pendingCreateSlotIndex = null;
+
+const initialListNames = "{{ config.trakt_custom_list_names | join(',') if config else 'movie-watchlist' }}".split(',').map(s => s.trim()).filter(s => s);
+
+function initListSlots() {
+    listSlots = initialListNames.map(name => ({ name: name, slug: name.toLowerCase().replace(/ /g, '-') }));
+    renderListSlots();
+}
+
+function renderListSlots() {
+    const container = document.getElementById('list-slots');
+    container.innerHTML = '';
+    listSlots.forEach((slot, i) => {
+        const isPrimary = i === 0;
+        const div = document.createElement('div');
+        div.className = 'list-slot';
+
+        const label = document.createElement('span');
+        label.className = 'list-slot-label';
+        label.textContent = isPrimary ? 'Primary' : `Overflow ${i}`;
+        div.appendChild(label);
+
+        const select = document.createElement('select');
+        select.className = 'list-slot-select';
+        select.dataset.index = i;
+
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.textContent = 'Select a list...';
+        select.appendChild(defaultOpt);
+
+        traktLists.forEach(lst => {
+            const opt = document.createElement('option');
+            opt.value = lst.name;
+            opt.textContent = `${lst.name} (${lst.item_count} items)`;
+            if (lst.name === slot.name) opt.selected = true;
+            select.appendChild(opt);
+        });
+
+        if (slot.name && !traktLists.some(l => l.name === slot.name)) {
+            const opt = document.createElement('option');
+            opt.value = slot.name;
+            opt.textContent = `${slot.name} (not yet created)`;
+            opt.selected = true;
+            select.appendChild(opt);
+        }
+
+        const createOpt = document.createElement('option');
+        createOpt.value = '__create__';
+        createOpt.textContent = '+ Create new list...';
+        select.appendChild(createOpt);
+
+        select.addEventListener('change', function() {
+            if (this.value === '__create__') {
+                pendingCreateSlotIndex = i;
+                openCreateListModal();
+            } else if (this.value) {
+                listSlots[i] = { name: this.value, slug: this.value.toLowerCase().replace(/ /g, '-') };
+                updateHiddenField();
+            }
+        });
+
+        div.appendChild(select);
+        container.appendChild(div);
+    });
+
+    const removeBtn = document.getElementById('remove-slot-btn');
+    if (removeBtn) removeBtn.style.display = listSlots.length > 1 ? '' : 'none';
+
+    updateHiddenField();
+}
+
+function addListSlot() {
+    if (!{{ 'true' if trakt_authed else 'false' }}) return;
+    listSlots.push({ name: '', slug: '' });
+    renderListSlots();
+}
+
+function removeLastListSlot() {
+    if (!{{ 'true' if trakt_authed else 'false' }}) return;
+    if (listSlots.length > 1) {
+        listSlots.pop();
+        renderListSlots();
+    }
+}
+
+function updateHiddenField() {
+    const hidden = document.getElementById('trakt_custom_list_names');
+    hidden.value = listSlots.map(s => s.name).filter(n => n).join(', ');
+}
+
+// --- Create List Modal ---
+function openCreateListModal() {
+    if (!{{ 'true' if trakt_authed else 'false' }}) return;
+    document.getElementById('create-list-modal').style.display = 'flex';
+    document.getElementById('new-list-name').value = '';
+    document.getElementById('create-list-error').style.display = 'none';
+    document.getElementById('new-list-name').focus();
+}
+
+function closeCreateListModal() {
+    document.getElementById('create-list-modal').style.display = 'none';
+    if (pendingCreateSlotIndex !== null) {
+        const selects = document.querySelectorAll('.list-slot-select');
+        if (selects[pendingCreateSlotIndex]) {
+            selects[pendingCreateSlotIndex].value = listSlots[pendingCreateSlotIndex].name || '';
+        }
+        pendingCreateSlotIndex = null;
+    }
+}
+
+async function createListFromModal() {
+    const name = document.getElementById('new-list-name').value.trim();
+    if (!name) return;
+    const btn = document.getElementById('create-list-btn');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    const errorDiv = document.getElementById('create-list-error');
+    errorDiv.style.display = 'none';
+
+    try {
+        const resp = await fetch('/api/trakt/create-list', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name })
+        });
+        const data = await resp.json();
+        if (data.error) {
+            errorDiv.textContent = data.error;
+            errorDiv.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Create List';
+            return;
+        }
+        traktLists.push({ name: name, slug: data.slug || name.toLowerCase().replace(/ /g, '-'), item_count: 0 });
+        if (pendingCreateSlotIndex !== null) {
+            listSlots[pendingCreateSlotIndex] = { name: name, slug: data.slug || name.toLowerCase().replace(/ /g, '-') };
+        }
+        renderListSlots();
+        closeCreateListModal();
+    } catch(e) {
+        errorDiv.textContent = 'Error: ' + e.message;
+        errorDiv.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Create List';
+}
+
+// --- Fetch Trakt lists on page load ---
+async function fetchTraktLists() {
+    if (!{{ 'true' if trakt_authed else 'false' }}) {
+        initListSlots();
+        return;
+    }
+    try {
+        const resp = await fetch('/api/trakt/lists');
+        const data = await resp.json();
+        if (data.lists) {
+            traktLists = data.lists;
+        }
+    } catch(e) {
+        // Silently fail
+    }
+    initListSlots();
+}
+
+// --- Auto-Sync ---
+async function loadAutoSyncStatus() {
+    try {
+        const resp = await fetch('/api/scheduler/status');
+        const data = await resp.json();
+        const btn = document.getElementById('auto-sync-btn');
+        const status = document.getElementById('auto-sync-status');
+        if (data.enabled) {
+            btn.textContent = 'Disable Auto-Sync';
+            btn.className = 'btn btn-sm btn-danger';
+            status.textContent = `Enabled — every ${data.interval_minutes} min` + (data.last_sync ? ` (last: ${data.last_sync})` : '');
+            status.className = 'test-result test-success';
+        } else {
+            btn.textContent = 'Enable Auto-Sync';
+            btn.className = 'btn btn-sm btn-primary';
+            status.textContent = 'Disabled';
+            status.className = 'test-result';
+        }
+    } catch(e) {
+        document.getElementById('auto-sync-btn').textContent = 'Enable Auto-Sync';
+    }
+}
+
+async function toggleAutoSync() {
+    const btn = document.getElementById('auto-sync-btn');
+    const currentEnabled = btn.textContent.includes('Disable');
+    try {
+        const resp = await fetch('/api/scheduler/toggle', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ enabled: !currentEnabled })
+        });
+        const data = await resp.json();
+        loadAutoSyncStatus();
+    } catch(e) {
+        alert('Error toggling auto-sync: ' + e.message);
+    }
+}
+
+// --- Connection Tests ---
+
+async function saveForm() {
+    const form = document.getElementById('setup-form');
+    const formData = new URLSearchParams(new FormData(form));
+    const resp = await fetch('/api/save-config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: formData
+    });
+    const data = await resp.json();
+    if (data.error) {
+        throw new Error(data.error);
+    }
+}
+
+async function saveAndAuth() {
+    const btn = document.getElementById('auth-btn');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    try {
+        await saveForm();
+        window.location.href = '/trakt-auth';
+    } catch(e) {
+        alert('Failed to save: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = origText;
+    }
+}
+
+async function testTrakt() {
+    const result = document.getElementById('trakt-result');
+    result.textContent = 'Saving...';
+    result.className = 'test-result';
+    try {
+        await saveForm();
+        result.textContent = 'Testing...';
+        const resp = await fetch('/api/test/trakt');
+        const data = await resp.json();
+        if (data.success) {
+            result.textContent = data.message;
+            result.className = 'test-result test-success';
+        } else {
+            result.textContent = 'Error: ' + (data.error || 'Failed');
+            result.className = 'test-result test-error';
+        }
+    } catch(e) {
+        result.textContent = 'Error: ' + e.message;
+        result.className = 'test-result test-error';
+    }
+}
+
+async function testLetterboxd() {
+    const result = document.getElementById('letterboxd-result');
+    result.textContent = 'Saving...';
+    result.className = 'test-result';
+    try {
+        await saveForm();
+        result.textContent = 'Logging in...';
+        const resp = await fetch('/api/test/letterboxd');
+        const data = await resp.json();
+        if (data.success) {
+            result.textContent = data.message;
+            result.className = 'test-result test-success';
+        } else {
+            result.textContent = 'Error: ' + (data.error || 'Failed');
+            result.className = 'test-result test-error';
+        }
+    } catch(e) {
+        result.textContent = 'Error: ' + e.message;
+        result.className = 'test-result test-error';
+    }
+}
+
+async function testPushover() {
+    const result = document.getElementById('pushover-result');
+    result.textContent = 'Saving...';
+    result.className = 'test-result';
+    try {
+        await saveForm();
+        result.textContent = 'Sending...';
+        const resp = await fetch('/api/test/pushover');
+        const data = await resp.json();
+        if (data.success) {
+            result.textContent = 'Notification sent!';
+            result.className = 'test-result test-success';
+        } else {
+            result.textContent = 'Error: ' + (data.error || 'Failed');
+            result.className = 'test-result test-error';
+        }
+    } catch(e) {
+        result.textContent = 'Error: ' + e.message;
+        result.className = 'test-result test-error';
+    }
+}
+
+// --- Export / Import ---
+async function exportSettings() {
+    try {
+        const resp = await fetch('/api/settings/export');
+        const data = await resp.json();
+        if (data.error) {
+            alert('Export failed: ' + data.error);
+            return;
+        }
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'pwlistmanager-settings.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch(e) {
+        alert('Export failed: ' + e.message);
+    }
+}
+
+async function importSettings(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const result = document.getElementById('import-result');
+    if (!confirm('Importing settings will overwrite your current configuration. This includes all credentials. Continue?')) {
+        event.target.value = '';
+        return;
+    }
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const resp = await fetch('/api/settings/import', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        const result_data = await resp.json();
+        if (result_data.error) {
+            result.textContent = 'Error: ' + result_data.error;
+            result.className = 'test-result test-error';
+        } else {
+            result.textContent = 'Settings imported! Reloading...';
+            result.className = 'test-result test-success';
+            setTimeout(() => window.location.reload(), 1500);
+        }
+    } catch(e) {
+        result.textContent = 'Error: ' + e.message;
+        result.className = 'test-result test-error';
+    }
+    event.target.value = '';
+}
+
+// --- Danger Zone ---
+async function confirmEraseHistory() {
+    if (!confirm('Are you sure you want to erase all sync history? This cannot be undone.')) return;
+    try {
+        const resp = await fetch('/api/erase-history', { method: 'POST' });
+        const data = await resp.json();
+        alert(data.status === 'ok' ? 'History erased successfully.' : 'Error: ' + (data.error || 'Failed'));
+    } catch(e) {
+        alert('Request failed: ' + e.message);
+    }
+}
+
+async function confirmFactoryReset() {
+    if (!confirm('Factory reset will delete ALL configuration, history, and authentication. Are you sure?')) return;
+    const code = prompt('Type "RESET" to confirm factory reset:');
+    if (code !== 'RESET') {
+        alert('Cancelled — you did not type RESET correctly.');
+        return;
+    }
+    try {
+        const resp = await fetch('/api/factory-reset', { method: 'POST' });
+        const data = await resp.json();
+        alert('Factory reset complete. Deleted: ' + (data.deleted || []).join(', ') + '. Please restart the server.');
+        window.location.href = '/setup';
+    } catch(e) {
+        alert('Request failed: ' + e.message);
+    }
+}
+
+// Initialize
+fetchTraktLists();
+{% if config %}loadAutoSyncStatus();{% endif %}
+</script>
+{% endblock %}

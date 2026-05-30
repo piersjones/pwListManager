@@ -1,0 +1,27 @@
+# config.yaml - Configuration for pwListManager
+
+trakt:
+  # Create a Trakt API app at https://trakt.tv/oauth/applications
+  # Set Redirect URI to: urn:ietf:wg:oauth:2.0:oob
+  client_id: "your_trakt_client_id_here"
+  client_secret: "your_trakt_client_secret_here"
+  
+  # Comma-separated list of custom Trakt list names for watchlist migration.
+  # The first list is primary; when it fills up (100 items), the next is used.
+  # You can create lists in the Setup page or manually on trakt.tv.
+  custom_list_names: "movie-watchlist"
+
+letterboxd:
+  username: "your_letterboxd_username"
+  password: "your_letterboxd_password"
+
+pushover:
+  # Pushover API credentials from https://pushover.net
+  user_key: "your_pushover_user_key"
+  api_token: "your_pushover_api_token"
+
+settings:
+  # Interval in minutes between sync cycles
+  sync_interval_minutes: 15
+  # Log level (DEBUG, INFO, WARNING, ERROR)
+  log_level: "INFO"
