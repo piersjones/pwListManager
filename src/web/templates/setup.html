@@ -12,10 +12,64 @@
 
     <form method="POST" action="/setup" id="setup-form">
 
-    <!-- Authentication & Connection Tests -->
-    <details class="collapsible-section" open>
+    <!-- App Settings -->
+    <details class="collapsible-section">
         <summary class="collapsible-header">
-            <span class="collapsible-icon">&#9660;</span>
+            <span class="collapsible-icon">&#9654;</span>
+            App Settings
+        </summary>
+        <div class="collapsible-body">
+            <div class="form-section">
+                <div class="form-group">
+                    <label for="sync_interval_minutes">Sync Interval (minutes)</label>
+                    <input type="number" id="sync_interval_minutes" name="sync_interval_minutes" value="{{ config.sync_interval_minutes if config else 15 }}" min="1">
+                    <p class="form-help" style="margin-top:0.25rem;">How often the auto-sync runs. Changes take effect after saving.</p>
+                </div>
+                <div class="form-group">
+                    <label for="log_level">Log Level</label>
+                    <select id="log_level" name="log_level">
+                        <option value="DEBUG" {% if config and config.log_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                        <option value="INFO" {% if not config or config.log_level == 'INFO' %}selected{% endif %}>INFO</option>
+                        <option value="WARNING" {% if config and config.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                        <option value="ERROR" {% if config and config.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                    </select>
+                </div>
+                {% if config %}
+                <div class="form-group">
+                    <label>Auto-Sync</label>
+                    <div class="test-row">
+                        <button type="button" onclick="toggleAutoSync()" class="btn btn-sm" id="auto-sync-btn">Loading...</button>
+                        <button type="button" onclick="triggerAutoSync()" class="btn btn-sm btn-primary" id="sync-now-btn">Sync Now</button>
+                        <span id="auto-sync-status" class="test-result"></span>
+                    </div>
+                    <p class="form-help" style="margin-top:0.25rem;">Automatically syncs watchlist and watched movies from Trakt to Letterboxd on the configured interval.</p>
+                    <div id="next-sync-countdown" class="form-help" style="margin-top:0.25rem; color: #3498db; font-weight: 500;"></div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if config %}
+            <div class="form-section">
+                <h2>Export / Import Settings</h2>
+                <p class="form-help">Export your configuration to a JSON file for backup, or import from a previous backup.</p>
+                <div class="test-row">
+                    <button type="button" onclick="exportSettings()" class="btn btn-sm">Export Settings</button>
+                    <button type="button" onclick="document.getElementById('import-file').click()" class="btn btn-sm btn-link">Import Settings</button>
+                    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importSettings(event)">
+                    <span id="import-result" class="test-result"></span>
+                </div>
+                <div class="flash flash-warning" style="margin-top:0.5rem; font-size:0.8rem;">
+                    <strong>Warning:</strong> Exported settings include all credentials (API keys, passwords, tokens). Do not share this file with anyone.
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- Authentication & Connection Tests -->
+    <details class="collapsible-section">
+        <summary class="collapsible-header">
+            <span class="collapsible-icon">&#9654;</span>
             Authentication & Connection Tests
         </summary>
         <div class="collapsible-body">
@@ -109,59 +163,7 @@
                 </div>
             </div>
 
-        </div>
-    </details>
-
-    <!-- App Settings -->
-    <details class="collapsible-section" {% if not config %}open{% endif %}>
-        <summary class="collapsible-header">
-            <span class="collapsible-icon">&#9654;</span>
-            App Settings
-        </summary>
-        <div class="collapsible-body">
-            <div class="form-section">
-                <div class="form-group">
-                    <label for="sync_interval_minutes">Sync Interval (minutes)</label>
-                    <input type="number" id="sync_interval_minutes" name="sync_interval_minutes" value="{{ config.sync_interval_minutes if config else 15 }}" min="1">
-                    <p class="form-help" style="margin-top:0.25rem;">How often the auto-sync runs. Changes take effect after saving.</p>
-                </div>
-                <div class="form-group">
-                    <label for="log_level">Log Level</label>
-                    <select id="log_level" name="log_level">
-                        <option value="DEBUG" {% if config and config.log_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
-                        <option value="INFO" {% if not config or config.log_level == 'INFO' %}selected{% endif %}>INFO</option>
-                        <option value="WARNING" {% if config and config.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
-                        <option value="ERROR" {% if config and config.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
-                    </select>
-                </div>
-                {% if config %}
-                <div class="form-group">
-                    <label>Auto-Sync</label>
-                    <div class="test-row">
-                        <button type="button" onclick="toggleAutoSync()" class="btn btn-sm" id="auto-sync-btn">Loading...</button>
-                        <span id="auto-sync-status" class="test-result"></span>
-                    </div>
-                    <p class="form-help" style="margin-top:0.25rem;">Automatically syncs watchlist and watched movies from Trakt to Letterboxd on the configured interval.</p>
-                </div>
-                {% endif %}
-            </div>
-
-            {% if config %}
-            <div class="form-section">
-                <h2>Export / Import Settings</h2>
-                <p class="form-help">Export your configuration to a JSON file for backup, or import from a previous backup.</p>
-                <div class="test-row">
-                    <button type="button" onclick="exportSettings()" class="btn btn-sm">Export Settings</button>
-                    <button type="button" onclick="document.getElementById('import-file').click()" class="btn btn-sm btn-link">Import Settings</button>
-                    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importSettings(event)">
-                    <span id="import-result" class="test-result"></span>
-                </div>
-                <div class="flash flash-warning" style="margin-top:0.5rem; font-size:0.8rem;">
-                    <strong>Warning:</strong> Exported settings include all credentials (API keys, passwords, tokens). Do not share this file with anyone.
-                </div>
-            </div>
-            {% endif %}
-        </div>
+</div>
     </details>
 
         <button type="submit" class="btn btn-primary btn-lg" style="margin-top:1rem;">Save Configuration</button>
@@ -407,6 +409,8 @@ async function fetchTraktLists() {
 }
 
 // --- Auto-Sync ---
+let countdownInterval = null;
+
 async function loadAutoSyncStatus() {
     try {
         const resp = await fetch('/api/scheduler/status');
@@ -424,9 +428,38 @@ async function loadAutoSyncStatus() {
             status.textContent = 'Disabled';
             status.className = 'test-result';
         }
+        // Update countdown
+        updateCountdown(data.next_sync_time, data.enabled);
     } catch(e) {
         document.getElementById('auto-sync-btn').textContent = 'Enable Auto-Sync';
     }
+}
+
+function updateCountdown(nextSyncTime, enabled) {
+    const countdownEl = document.getElementById('next-sync-countdown');
+    if (!countdownEl) return;
+    if (!enabled || !nextSyncTime) {
+        countdownEl.textContent = '';
+        if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+        return;
+    }
+    if (countdownInterval) clearInterval(countdownInterval);
+    function tick() {
+        const now = new Date().getTime();
+        const target = new Date(nextSyncTime).getTime();
+        const diff = target - now;
+        if (diff <= 0) {
+            countdownEl.textContent = 'Syncing now...';
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+            return;
+        }
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        countdownEl.textContent = `Next auto-sync in ${mins}m ${secs}s`;
+    }
+    tick();
+    countdownInterval = setInterval(tick, 1000);
 }
 
 async function toggleAutoSync() {
@@ -443,6 +476,30 @@ async function toggleAutoSync() {
     } catch(e) {
         alert('Error toggling auto-sync: ' + e.message);
     }
+}
+
+async function triggerAutoSync() {
+    const btn = document.getElementById('sync-now-btn');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    try {
+        const resp = await fetch('/api/scheduler/trigger', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await resp.json();
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else {
+            btn.textContent = 'Started!';
+            setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+        }
+    } catch(e) {
+        alert('Error triggering sync: ' + e.message);
+    }
+    btn.textContent = origText;
+    btn.disabled = false;
 }
 
 // --- Connection Tests ---
@@ -626,6 +683,6 @@ async function confirmFactoryReset() {
 
 // Initialize
 fetchTraktLists();
-{% if config %}loadAutoSyncStatus();{% endif %}
+{% if config %}loadAutoSyncStatus(); setInterval(loadAutoSyncStatus, 30000);{% endif %}
 </script>
 {% endblock %}

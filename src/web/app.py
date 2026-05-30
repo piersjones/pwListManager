@@ -96,6 +96,7 @@ def create_app(config_path=None):
                           'api_trakt_create_missing_lists', 'api_save_config',
                           'api_factory_reset', 'api_erase_history',
                           'api_scheduler_status', 'api_scheduler_initial_sync_accept', 'api_scheduler_initial_sync_skip',
+                          'api_scheduler_trigger',
                           'api_recent', 'api_status', 'api_health']
         if request.endpoint in allowed_routes:
             return None
@@ -799,6 +800,7 @@ def create_app(config_path=None):
         "thread": None,
         "initial_sync_pending": False,
         "initial_sync_answered": False,
+        "next_sync_time": None,  # ISO timestamp of next scheduled sync
     }
 
     @app.route("/api/scheduler/status")
@@ -824,6 +826,7 @@ def create_app(config_path=None):
             "interval_minutes": _scheduler_state["interval_minutes"],
             "last_sync": _scheduler_state["last_sync"],
             "initial_sync_pending": _scheduler_state["initial_sync_pending"],
+            "next_sync_time": _scheduler_state["next_sync_time"],
         })
 
     @app.route("/api/scheduler/initial-sync/accept", methods=["POST"])
@@ -924,6 +927,35 @@ def create_app(config_path=None):
         except Exception:
             pass
         return jsonify({"interval_minutes": _scheduler_state["interval_minutes"]})
+
+    @app.route("/api/scheduler/trigger", methods=["POST"])
+    def api_scheduler_trigger():
+        """Manually trigger an auto-sync cycle (incremental)."""
+        try:
+            config = get_config()
+            if not config:
+                return jsonify({"error": "Not configured"}), 400
+            if not _check_trakt_auth():
+                return jsonify({"error": "Trakt not authenticated"}), 400
+            queue = get_queue(config_path)
+            status = queue.get_status()
+            if status["running"] and not status["paused"]:
+                return jsonify({"error": "Queue is already running"}), 409
+            if _scheduler_state["running"]:
+                return jsonify({"error": "Auto-sync is already running"}), 409
+            logger = logging.getLogger("pwListManager.scheduler")
+            logger.info("Manual auto-sync trigger — enqueuing incremental sync jobs")
+            queue.enqueue_migrate_trakt_watchlist(incremental=True)
+            queue.enqueue_watchlist_sync_all(incremental=True)
+            queue.enqueue_watched_sync_all(incremental=True)
+            started = queue.start()
+            if not started:
+                return jsonify({"error": "No items to sync"}), 400
+            _scheduler_state["last_sync"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            return jsonify({"status": "started", "message": "Auto-sync triggered"})
+        except Exception as e:
+            logging.getLogger("pwListManager.scheduler").error(f"Error triggering auto-sync: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/settings/export")
     def api_settings_export():
@@ -1087,6 +1119,7 @@ def create_app(config_path=None):
                 _scheduler_state["running"] = False
                 _scheduler_state["initial_sync_pending"] = False
             interval = _scheduler_state["interval_minutes"]
+            _scheduler_state["next_sync_time"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() + interval * 60))
             time.sleep(interval * 60)
 
     # Read initial interval from config
