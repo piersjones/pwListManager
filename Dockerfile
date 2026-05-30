@@ -16,10 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ src/
-COPY config.yaml.example config.yaml.example
 
-# Create data and logs directories (mounted as volumes)
-RUN mkdir -p /app/data /app/logs
+# Create data and logs directories with proper permissions
+RUN mkdir -p /app/data /app/logs && chmod 777 /app/data /app/logs
 
 # Expose Flask port
 EXPOSE 5050

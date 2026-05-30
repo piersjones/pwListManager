@@ -6,12 +6,11 @@ services:
     ports:
       - "5050:5050"
     volumes:
-      # Persist config, database, and logs outside the container
-      - ./config.yaml:/app/config.yaml
+      # Persist database and logs outside the container
       - ./data:/app/data
       - ./logs:/app/logs
     environment:
-      - TZ=America/New_York
+      - TZ=Europe/London
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/api/health')"]
       interval: 30s

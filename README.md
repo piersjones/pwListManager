@@ -128,7 +128,6 @@ pwListManager/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
-├── config.yaml.example
 ├── src/
 │   ├── main.py              # CLI daemon (legacy)
 │   ├── config.py            # YAML config parser
@@ -181,9 +180,10 @@ The Docker image is based on `python:3.11-slim` with `curl_cffi` system dependen
 
 | Volume | Purpose |
 |--------|---------|
-| `./config.yaml` | Configuration file (auto-created by web UI) |
 | `./data/` | SQLite database |
 | `./logs/` | Application logs |
+
+Configuration is managed through the web UI and stored in `config.yaml` inside the container. No manual config file editing needed.
 
 The container includes a health check against `/api/health` and restarts automatically via `unless-stopped` policy.
 

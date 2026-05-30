@@ -31,8 +31,7 @@ env/
 # Configuration and secrets
 config.yaml
 .cookie/
-*.json
-!config.yaml.example
+config.json
 
 # Local SQLite databases
 data/

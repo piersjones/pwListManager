@@ -14,7 +14,6 @@ venv
 data/
 logs/
 config.yaml
-config.json
 .cookie/
 
 # IDE
