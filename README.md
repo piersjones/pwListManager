@@ -2,9 +2,11 @@
 
 One-way sync from [Trakt.tv](https://trakt.tv) to [Letterboxd](https://letterboxd.com), with iOS push notifications via [Pushover](https://pushover.net).
 
-pwListManager watches your Trakt watchlist and watched history, and mirrors changes to Letterboxd — adding movies to your Letterboxd watchlist, marking them watched, and transferring ratings. It also migrates your Trakt watchlist to custom lists to bypass the 100-item limit on free accounts. When a movie is marked watched, you get a Pushover notification with a deep link to rate it in the Letterboxd iOS app.
+pwListManager watches your Trakt watchlist and watched history, and mirrors changes to Letterboxd — adding movies to your Letterboxd watchlist, marking them watched, and transferring ratings. It also migrates movies in your Trakt watchlist to custom lists to bypass the 100-item limit on free accounts. When a movie is marked watched, you get a Pushover notification with a deep link to rate it in the Letterboxd iOS app.
 
 **This is one-way sync only: Trakt → Letterboxd.** It does not sync changes from Letterboxd back to Trakt. This fits a workflow where Trakt is the source of truth (e.g. tracked via a media server like Plex) and Letterboxd is the destination.
+
+Why? This solves a problem in my personal media workflow. Trakt is widely supported by media apps for scrobbling and watchlist adding, but the new Trakt experience sucks, and I like Letterboxd for movies.
 
 Designed to run on a Raspberry Pi 4 (ARM64) inside Docker. Set it up once and it syncs automatically.
 
@@ -48,7 +50,7 @@ Open `http://localhost:5050` and configure everything through the web UI.
 
 ## Setup
 
-All configuration is done through the web UI at `http://<host>:5050/setup`. No YAML editing required.
+All configuration is done through the web UI at `http://<host>:5050/setup`.
 
 ### Trakt
 
