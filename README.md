@@ -1,23 +1,23 @@
 # pwListManager
 
-Automated media watchlist sync between [Trakt.tv](https://trakt.tv) and [Letterboxd](https://letterboxd.com), with iOS push notifications via [Pushover](https://pushover.net).
+One-way sync from [Trakt.tv](https://trakt.tv) to [Letterboxd](https://letterboxd.com), with iOS push notifications via [Pushover](https://pushover.net).
 
-Designed to run on a Raspberry Pi 4 (ARM64) inside Docker. Set it up once and it keeps your watchlists and watched history in sync automatically.
+pwListManager watches your Trakt watchlist and watched history, and mirrors changes to Letterboxd — adding movies to your Letterboxd watchlist, marking them watched, and transferring ratings. It also migrates your Trakt watchlist to custom lists to bypass the 100-item limit on free accounts. When a movie is marked watched, you get a Pushover notification with a deep link to rate it in the Letterboxd iOS app.
 
-## Why?
+**This is one-way sync only: Trakt → Letterboxd.** It does not sync changes from Letterboxd back to Trakt. This fits a workflow where Trakt is the source of truth (e.g. tracked via a media server like Plex) and Letterboxd is the destination.
 
-Trakt free accounts limit the default watchlist to 100 items. pwListManager works around this by migrating your watchlist to custom Trakt lists (with automatic overflow when a list fills up), then syncing everything to Letterboxd. When a movie is marked watched, you get a Pushover notification with a deep link to rate it in the Letterboxd iOS app.
+Designed to run on a Raspberry Pi 4 (ARM64) inside Docker. Set it up once and it syncs automatically.
 
 ## Features
 
-- **Watchlist migration** — Moves movies from the default Trakt watchlist (100-item limit) to custom lists, with automatic overflow to additional lists
-- **Letterboxd sync** — Adds watchlisted movies to your Letterboxd watchlist and marks watched movies as watched on Letterboxd
+- **Watchlist migration** — Moves movies from the default Trakt watchlist to custom lists, bypassing the 100-item limit on free Trakt accounts. Automatically overflows to additional lists when the primary fills up.
+- **One-way sync to Letterboxd** — Adds watchlisted movies to your Letterboxd watchlist and marks watched movies as watched on Letterboxd. Does not sync back.
 - **Rating transfer** — Copies Trakt ratings (1–10) to Letterboxd (0.5–5 stars)
 - **iOS notifications** — Pushover alerts with Letterboxd deep links so you can rate movies immediately after watching
 - **Pre-check before writes** — Checks if a movie is already on your Letterboxd watchlist/watched list before making API calls, preventing duplicate entries and overwriting manual ratings
 - **Auto-sync scheduler** — Runs incremental sync on a configurable interval (default 15 minutes), only processing new items
 - **Job queue** — Background queue with progress tracking, pause/resume, and ETA
-- **Web UI** — Dashboard, setup wizard, Trakt device auth flow, task management, and log viewer
+- **Web UI** — Setup wizard, dashboard, task management, and log viewer — no YAML editing required
 - **Cloudflare bypass** — Uses `curl_cffi` with Chrome TLS fingerprint to authenticate with Letterboxd
 - **Error alerts** — Priority Pushover notifications when API calls fail or credentials expire
 
@@ -28,12 +28,10 @@ Trakt free accounts limit the default watchlist to 100 items. pwListManager work
 ```bash
 git clone https://github.com/piersjones/pwListManager.git
 cd pwListManager
-cp config.yaml.example config.yaml
-# Edit config.yaml with your credentials
 docker compose up -d
 ```
 
-Open `http://<your-pi-ip>:5050` and follow the setup wizard.
+Open `http://<your-pi-ip>:5050` and follow the setup wizard — enter your credentials, authenticate with Trakt, and you're running.
 
 ### Manual
 
@@ -43,33 +41,14 @@ cd pwListManager
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp config.yaml.example config.yaml
-# Edit config.yaml with your credentials
 python -m src.web_server
 ```
 
-## Configuration
+Open `http://localhost:5050` and configure everything through the web UI.
 
-Copy `config.yaml.example` to `config.yaml` and fill in your credentials. You can also configure everything through the web UI.
+## Setup
 
-```yaml
-trakt:
-  client_id: "your_trakt_client_id"
-  client_secret: "your_trakt_client_secret"
-  custom_list_names: "movie-watchlist"
-
-letterboxd:
-  username: "your_letterboxd_username"
-  password: "your_letterboxd_password"
-
-pushover:
-  user_key: "your_pushover_user_key"
-  api_token: "your_pushover_api_token"
-
-settings:
-  sync_interval_minutes: 15
-  log_level: "INFO"
-```
+All configuration is done through the web UI at `http://<host>:5050/setup`. No YAML editing required.
 
 ### Trakt
 
@@ -77,6 +56,7 @@ settings:
 2. Set the **Redirect URI** to `urn:ietf:wg:oauth:2.0:oob`
 3. Enter your Client ID and Client Secret in the setup page
 4. Click **Authenticate with Trakt** — the app uses Device Authorization flow, so you'll visit `trakt.tv/activate` and enter a code
+5. Select which custom lists to sync from (or create new ones)
 
 ### Letterboxd
 
@@ -90,26 +70,24 @@ Letterboxd has no public write API. pwListManager logs in programmatically using
 
 ## How It Works
 
-### Sync Flow
+### Sync Flow (Trakt → Letterboxd, one-way)
 
 ```
 Trakt Watchlist
       │
       ▼
-Custom Trakt List (bypasses 100-item limit)
+Custom Trakt List (bypasses 100-item free account limit)
       │
       ├──► Letterboxd Watchlist
       │
-      ▼
 Trakt Watched History
       │
       ├──► Letterboxd Watched
       │         │
       │         ▼
       │    Pushover Notification
-      │    (with Letterboxd deep link)
+      │    (with Letterboxd deep link to rate)
       │
-      ▼
 Trakt Ratings
       │
       └──► Letterboxd Ratings (1-10 → 0.5-5 stars)
@@ -117,7 +95,7 @@ Trakt Ratings
 
 ### Auto-Sync
 
-The scheduler runs on the configured interval (default 15 minutes). On first run, it prompts you to either:
+The scheduler runs on a configurable interval (default 15 minutes). On first run, it prompts you to either:
 - **Run a full sync** — Processes all existing items
 - **Skip** — Takes a snapshot of current state and only processes new items going forward
 
@@ -137,8 +115,8 @@ All sync operations go through a background job queue with:
 | Page | Description |
 |------|-------------|
 | **Dashboard** | Stats, recent sync history with progress-flow cards, auto-refresh every 5s |
-| **Setup** | Configure Trakt, Letterboxd, and Pushover credentials; test connections; manage custom lists |
-| **Tasks** | Trigger sync actions, view Trakt watchlist, manage job queue, auto-sync controls |
+| **Setup** | Configure Trakt, Letterboxd, and Pushover credentials; test connections; manage custom lists; auto-sync controls with countdown timer |
+| **Tasks** | Trigger sync actions, view Trakt watchlist, manage job queue |
 | **Logs** | Live log viewer |
 
 ## Project Structure
@@ -201,7 +179,7 @@ The Docker image is based on `python:3.11-slim` with `curl_cffi` system dependen
 
 | Volume | Purpose |
 |--------|---------|
-| `./config.yaml` | Configuration file |
+| `./config.yaml` | Configuration file (auto-created by web UI) |
 | `./data/` | SQLite database |
 | `./logs/` | Application logs |
 
